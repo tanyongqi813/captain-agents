@@ -129,12 +129,12 @@ test('旧自检缓存缺 npmrc 或该查的登录探针，即使 ok 为 true 也
     if (isWindows && (isolation !== 'codex' || !windowsExpectedProbes().includes(name))) continue;
     const results = currentPassing(), result = results.find(r => r.isolation === isolation)!;
     result.probes = result.probes.filter(p => p.name !== name);
-    await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ version: 8, platform: process.platform, ok: true, at: new Date().toISOString(), results }));
+    await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ ...current(), results }));
     await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果|隔离自检没过/);
   }
   if (isWindows) for (const name of ['account', 'listen', 'pipe', 'startup-folder', 'tmp-root']) {
     const results = currentPassing(); results[0].probes = results[0].probes.filter(p => p.name !== name);
-    await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ version: 8, platform: 'win32', ok: true, at: new Date().toISOString(), results }));
+    await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ ...current(), results }));
     await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果|隔离自检没过/);
   }
   // 在另一种系统上做的自检结果不作数：要重新自检。
