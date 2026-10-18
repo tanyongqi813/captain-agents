@@ -8,6 +8,8 @@ export type QuotaBar = Quota['bars'][number];
 export const quotaLevel = (used: number | null, stop: QuotaStop = 80): '' | 'warn' | 'bad' => used == null ? '' : used >= 95 ? 'bad' : stop !== null && used >= stop ? 'warn' : '';
 // 一家有多个池（Cursor 三个池、Codex 两个窗口）时，取用得最多的那个；一个都没查到时是 undefined。
 export const topBar = (q: Quota) => q.bars.reduce<QuotaBar | undefined>((a, b) => (b.used ?? -1) > (a?.used ?? -1) ? b : a, undefined);
+// 顶栏的 Cursor 表示套餐整体消耗；子池可能已满，但不能代替总额度。
+export const headerQuotaBar = (q: Quota) => q.icon === 'cursor' ? q.bars.find(b => b.label === '总额度') : topBar(q);
 const barText = (b: QuotaBar) => b.used == null ? '查不到' : (b.approx ? '不到 ' : '') + b.used + '%';
 export const dataTime = (q: Quota) => q.at ? `数据时间 ${fmtTime(q.at, true)}` : '还没有查到过';
 // 悬停提示：每个池一行，再写数据时间（提示是纯文字，提醒色只用在各家表现页的卡片上）。

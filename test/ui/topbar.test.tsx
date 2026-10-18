@@ -73,9 +73,9 @@ test('StatusCluster：三家一个环加一个自检圆点，整块是按钮，�
   const open = vi.fn();
   render(<StatusCluster quota={quota} selfcheck={{ ok: true, at: null, note: '目录外写都被挡住' }} onOpen={open} />);
   const button = screen.getByRole('button', { name: /各家额度/ });
-  expect(within(button).getAllByRole('img').map(x => x.getAttribute('aria-label'))).toEqual(['Codex：周额度已用 31%', 'Grok：查不到额度', 'Cursor：其他模型池已用 96%', '隔离正常']);
+  expect(within(button).getAllByRole('img').map(x => x.getAttribute('aria-label'))).toEqual(['Codex：周额度已用 31%', 'Grok：查不到额度', 'Cursor：总额度已用 10%', '隔离正常']);
   expect(within(button).getByRole('img', { name: 'Grok：查不到额度' }).hasAttribute('data-empty')).toBe(true);
-  expect(within(button).getByRole('img', { name: /^Cursor/ }).getAttribute('data-level')).toBe('bad');
+  expect(within(button).getByRole('img', { name: /^Cursor/ }).getAttribute('data-level')).toBeNull();
   fireEvent.click(button); expect(open).toHaveBeenCalledTimes(1);
 });
 test('StatusCluster：整块悬停写各家详情和自检原文；圆点悬停只写自检原文；圆点颜色跟自检结果', () => {
@@ -144,6 +144,26 @@ test('顶栏：设置按钮打开设置', async () => {
 test('StatusCluster：环旁写百分比，查不到写“—”；平时不标等级，快用完时数字跟环一起变色', () => {
   const { container } = render(<StatusCluster quota={quota} selfcheck={{ ok: true, at: null, note: '' }} onOpen={() => {}} />);
   const items = [...container.querySelectorAll('.quota-item')] as HTMLElement[];
-  expect(items.map(i => i.querySelector('.quota-pct')?.textContent)).toEqual(['31%', '—', '96%']);
-  expect(items.map(i => i.dataset.level ?? '')).toEqual(['', '', 'bad']);
+  expect(items.map(i => i.querySelector('.quota-pct')?.textContent)).toEqual(['31%', '—', '10%']);
+  expect(items.map(i => i.dataset.level ?? '')).toEqual(['', '', '']);
+});
+
+test('Cursor 顶栏取总额度；子池触顶仍保留详情，缺总额度不以子池代替', () => {
+  const cursor = quota[2];
+  const show = (bars: typeof cursor.bars) => <StatusCluster quota={[{ ...cursor, bars }]} selfcheck={{ ok: true, at: null, note: '' }} onOpen={() => {}} />;
+  const { container, rerender } = render(show([bar('总额度', 52), bar('自家模型池', 51), bar('其他模型池', 100)]));
+  const item = () => container.querySelector('.quota-item') as HTMLElement;
+  expect(item().querySelector('.quota-pct')?.textContent).toBe('52%');
+  expect(screen.getByRole('img', { name: 'Cursor：总额度已用 52%' }).getAttribute('data-used')).toBe('52');
+  expect(item().dataset.level).toBeUndefined();
+  expect(screen.getByRole('button').title).toContain('其他模型池：100%');
+  for (const bars of [[bar('其他模型池', 100)], [bar('总额度', null), bar('其他模型池', 100)]]) {
+    rerender(show(bars));
+    expect(item().querySelector('.quota-pct')?.textContent).toBe('—');
+    expect(screen.getByRole('img', { name: 'Cursor：查不到额度' }).hasAttribute('data-empty')).toBe(true);
+  }
+  rerender(show([bar('总额度', 0), bar('其他模型池', 100)]));
+  expect(item().querySelector('.quota-pct')?.textContent).toBe('0%');
+  rerender(show([bar('总额度', 100), bar('其他模型池', 0)]));
+  expect(item().dataset.level).toBe('bad');
 });

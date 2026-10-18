@@ -1,6 +1,6 @@
 import type { QuotaStop } from '../../../src/core/settings.ts';
 import type { View } from '../../../src/core/view-types.ts';
-import { quotaLevel, quotaTip, topBar } from '../lib/quota.ts';
+import { headerQuotaBar, quotaLevel, quotaTip } from '../lib/quota.ts';
 import { QuotaRing } from './QuotaRing.tsx';
 import { WorkerIcon } from './WorkerIdentity.tsx';
 import { isWindows } from './platform.ts';
@@ -14,7 +14,7 @@ export function StatusCluster({ quota, connected = [], selfcheck, onOpen, stop }
   const tip = [...quota.map(q => `${q.name}${q.plan ? `（${q.plan}）` : ''}\n${quotaTip(q)}`), ...connected.map(p => `${p.name}\n已接入，暂无可查询额度`), `${text}\n${selfcheck.note}`].join('\n\n');
   return <button type="button" className="status" aria-label="各家额度、已接入 AI 和隔离自检，点开看各家表现" title={tip} onClick={onOpen}>
     {quota.map(q => {
-      const top = topBar(q), used = top?.used ?? null;
+      const top = headerQuotaBar(q), used = top?.used ?? null;
       // 环旁写百分比，一眼能读；快用完时数字和环一起变色。
       return <span className="quota-item" key={q.name} data-level={quotaLevel(used, stop) || undefined}>
         <QuotaRing used={used} stop={stop} label={`${q.name}：${top && used != null ? `${top.label}已用 ${top.approx ? '不到 ' : ''}${used}%` : '查不到额度'}`}><WorkerIcon name={q.icon} size="sm" /></QuotaRing>

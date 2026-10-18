@@ -94,7 +94,7 @@ export function History({
   </div>;
   const archivedNow = !!scope && archivedNames.has(scope);
   return <SideNavLayout className="history-layout" label="项目" items={items} value={scope ? 'p:' + scope : 'all'} onChange={id => setProject(id === 'all' ? '' : id.slice(2))} footer={archivedSection}>
-    <div className="history"><h1>历史</h1><p className="sub">{current ? current.label : '全部项目'} · 共 {shown.length} 件。同一道题派给几家的算一件，点一行看各家的打分和评语。</p>
+    <div className="history"><h1>历史</h1><p className="sub">{current ? current.label : '全部项目'} · 共 {shown.length} 件。展开任务查看结果、评分和评语。</p>
     {archivedNow && <div className="arch-note" role="note"><span>这个项目已归档：不在看板上显示，也不能派活。记录和打分都留着。</span><Button size="sm" onClick={() => onUnarchive(scope)}>取消归档</Button></div>}
     {kinds.length > 2 && <div className="filters">{kinds.map(k => <button key={k} type="button" className={k === kind ? 'on' : ''} aria-pressed={k === kind} onClick={() => setFilter(k)}>{k}</button>)}</div>}
     {shown.length ? dayGroups(shown, now).map(g => <section key={g.key} className="dayg"><h3 className="day">{g.label}</h3><div className="panel hgroup">{g.entries.map(e => <HistoryRow key={e.target.kind + e.target.id} entry={e} workers={view.workers} project={scope ? undefined : projectLabel(view, entryProject(e))} open={open} />)}</div></section>)
