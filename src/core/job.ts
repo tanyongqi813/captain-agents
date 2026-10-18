@@ -63,6 +63,8 @@ export type Job = {
   // 任务台账追溯（docs/tasks/TASK-006.md）：从项目规划（docs/TASK_LIST.md）派发的活记下 Task ID 和 Task Spec
   // 的仓库内相对路径；旧记录没有这一字段，读取照常兼容。
   plan?: { taskId: string; spec: string };
+  // 无人看守派出的活（docs/tasks/TASK-009.md）：记住是哪一台执行、哪一个动作令牌，崩溃恢复靠它认领，不重复派活。
+  autopilot?: { run: string; token: string };
   // 项目群里的成员（docs/design-team.md 第 16 节）：这件活是某位选手在这个群里的“席位”，每被 @ 一次就续接一轮；
   // 副本是群共用的，清理这件活时不删副本（群收起后由 xagents chat clean 删）。
   chat?: { id: string };

@@ -39,6 +39,7 @@ import { effortNames } from '../core/policy.ts';
 import { slimOld } from '../core/slim.ts';
 import { chatNew, chatList, chatLog, chatSay, chatControl, chatWait } from './chat.ts';
 import { teamStart, teamStatus, teamLog, teamSay, teamRound, teamStop } from './team.ts';
+import { autopilotStart, autopilotStatus, autopilotList, autopilotResume, autopilotStop } from './autopilot.ts';
 
 const help = () => `派活工作台：登记、派发和收集本机助手的任务。
   xagents intro   # 打印给其他 AI 的对接提示词（贴进它的对话，它就知道先读手册）
@@ -74,6 +75,13 @@ const help = () => `派活工作台：登记、派发和收集本机助手的任
   xagents team say <队号> "…"   # 负责人在频道里说一句，下一轮带给双方
   xagents team round <队号> [--note "…"]   # 停下的小队再走一轮
   xagents team stop <队号>   # 收场：停下在跑的那位和后台进程
+  xagents autopilot start <任务号> --project 名字 --who 选手:强度[:fast] [--who …] [--policy short|standard|long] [--ro]
+    无人看守：从项目规划里挑一项真正可执行的 READY 任务，平台自己盯着往下走。
+    这一版只搭骨架：只派活、记账、按预算停，不自动细拆、不审查、不验收，走完一步就交给主人
+  xagents autopilot status [编号]   # 不写编号列全部
+  xagents autopilot list
+  xagents autopilot resume <编号>   # 推进器掉了（等恢复）就接着起来：原任务、选手、预算和动作令牌都不改
+  xagents autopilot stop <编号>
   xagents status [任务号|批号|队号] [--all]
     有计时记录的任务会显示跑命令用时和步数；工具重叠只计一次，休眠不计入
   xagents wait|collect|stop <任务号|批号>
@@ -366,6 +374,23 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       }
       if (rest[0] === 'stop') { arity(rest, 2); await teamStop(rest[1]); return 0; }
       throw new Error('team 命令只支持 start、status、log、say、round 和 stop，请运行 xagents --help。');
+    }
+    if (cmd === 'autopilot') {
+      if (rest.length === 1 && rest[0] === '--help') { console.log(help()); return 0; }
+      if (!rest.length) throw new Error('autopilot 命令只支持 start、status、list、resume 和 stop，请运行 xagents --help。');
+      if (rest[0] === 'start') {
+        const p = parse(rest.slice(1), ['project', 'who', 'policy'], ['ro'], ['who']);
+        arity(p.positional, 1);
+        if (!p.one('project')) throw new Error('请用 --project 指定已登记的项目。');
+        if (!p.options.who?.length) throw new Error('请用 --who 指定至少一位选手，写法是 选手:强度[:fast]。');
+        await autopilotStart({ project: p.one('project')!, taskId: p.positional[0], who: p.options.who, policy: p.one('policy'), ro: p.switches.has('ro') });
+        return 0;
+      }
+      if (rest[0] === 'status') { const p = parse(rest.slice(1)); arity(p.positional, 0, 1); await autopilotStatus(p.positional[0]); return 0; }
+      if (rest[0] === 'list') { arity(rest, 1); await autopilotList(); return 0; }
+      if (rest[0] === 'resume') { const p = parse(rest.slice(1)); arity(p.positional, 1); await autopilotResume(p.positional[0]); return 0; }
+      if (rest[0] === 'stop') { const p = parse(rest.slice(1)); arity(p.positional, 1); await autopilotStop(p.positional[0]); return 0; }
+      throw new Error('autopilot 命令只支持 start、status、list、resume 和 stop，请运行 xagents --help。');
     }
     if (cmd === 'run') {
       const p = parse(rest, ['who', 'kind', 'title', 'summary', 'project', 'base'], ['ro', 'force', 'dirty-ok'], ['who'], ['real']); arity(p.positional, 1);

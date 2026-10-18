@@ -28,7 +28,7 @@ import { assertDeepseekAvailable } from './deepseek-settings.ts';
 
 // team：小队派的队员（docs/design-team.md），记进任务记录，看板据此画进小队卡。
 // plan：从项目任务规划派发的追溯元数据（docs/tasks/TASK-006.md），由规划派发入口下发，写进任务记录。
-export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string } };
+export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string } };
 export async function launch(job: Job, cli: string) {
   const fd = await open(join(jobDir(job.id), 'supervisor.log'), 'a', 0o600);
   try {
@@ -114,6 +114,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
           ...(options.team ? { team: { ...options.team } } : {}),
           ...(options.chat ? { chat: { ...options.chat } } : {}),
           ...(options.plan ? { plan: { ...options.plan } } : {}),
+          ...(options.autopilot ? { autopilot: { ...options.autopilot } } : {}),
           kind, title, summary, state: 'queued', created: now.toISOString(), queuedBy: process.pid, queuedSince: processSince(process.pid) };
         await createJob(Object.assign(job, { quota_before: quota })); jobs.push(job);
       }

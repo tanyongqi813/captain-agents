@@ -1,6 +1,6 @@
 # TASK-010：负责人 AI 诊断与有界恢复协议
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P1`
 - 难度等级：`High`
 - 前置任务：`TASK-009` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

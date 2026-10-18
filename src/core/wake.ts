@@ -228,7 +228,7 @@ export async function wakeGate(choice: ReturnType<typeof selection>, project?: s
 // 推进进程还要派新成员，快照必须带原隔离模板；只复制平台代码，不从群副本取代码。
 // refresh：群是长期留着的，推进进程每次启动都换成平台现在的代码（平台修了什么，旧群下次被叫醒就用得上）；
 // 调用方要保证这时没有推进进程在跑（chat-engine.ts 在群的锁里先确认）。小队是一次性的，照旧只拍一次。
-export async function engineSnapshot(dir: string, name: 'chat-entry.ts' | 'team-entry.ts', refresh = false) {
+export async function engineSnapshot(dir: string, name: 'chat-entry.ts' | 'team-entry.ts' | 'autopilot-entry.ts', refresh = false) {
   const runtime = join(dir, 'runtime'), entry = join(runtime, 'src/core', name);
   if (refresh) await rm(runtime, { recursive: true, force: true });
   else try { await access(entry); return entry; } catch (e) { if (!hasCode(e, 'ENOENT')) throw e; }
