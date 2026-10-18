@@ -1,12 +1,13 @@
-import { realpath, readdir, stat } from 'node:fs/promises';
+import { realpath, readdir, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { relativeInside, samePath } from './platform.ts';
+import { relativeInside, samePath, stillRunning } from './platform.ts';
 import { paths, safeName } from './paths.ts';
-import { readJson, writeJson, withLock } from './fsx.ts';
+import { readJson, writeJson, withLock, alive } from './fsx.ts';
 import { git } from './worktree.ts';
 import type { ProjectCheck } from './project-check.ts';
 import type { VerifyStep } from './verify.ts';
-import { listJobs } from './job.ts';
+import { active, leftBy, listJobs } from './job.ts';
+import { listChats } from './chat.ts';
 import { writeSettings } from './settings.ts';
 import { hasCode } from './fsx.ts';
 import { checkBudget, DEFAULT_BUDGET } from './budget.ts';
@@ -46,6 +47,70 @@ export async function setProjectLabel(name: string, label: string) {
     const current = await readJson<Record<string, unknown>>(file).catch(() => { throw new Error(`没有登记叫 ${name} 的项目，先用 xagents project add 登记。`); });
     await writeJson(file, { ...current, label: clean });
     return clean;
+  });
+}
+
+// 桌面“设置 → 项目”编辑登记（docs/tasks/TASK-003.md）：只改提交的字段，体检（check）、验收底子（baseline）
+// 和将来新增的未知字段原样保留。rules 传 null 表示清除；窗口交不进这个字段，只能由主进程用文件选择器
+// 挑好的真实路径经一次性令牌带进来（见 app/main/project-bridge.ts）。
+export type ProjectUpdate = { label?: string; worktreeRoot?: string; setup?: string[]; verify?: string[]; denyReadExtra?: string[]; rules?: string | null };
+const stringList = (what: string, value: string[]) => {
+  if (!Array.isArray(value)) throw new Error(`${what}必须是列表。`);
+  for (const item of value) if (typeof item !== 'string' || !item.trim()) throw new Error(`${what}每一项都必须是文字，不能有空项。`);
+  return value;
+};
+export async function updateProject(name: string, patch: ProjectUpdate): Promise<Project> {
+  safeName(name);
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('修改内容格式不对。');
+  // 先在锁外把要写的值全部校验完（rules 要 realpath），锁里只做读-改-写。
+  const next: Record<string, unknown> = {};
+  if (patch.label !== undefined) next.label = checkLabel(patch.label);
+  if (patch.worktreeRoot !== undefined) next.worktreeRoot = relativePath(patch.worktreeRoot);
+  if (patch.setup !== undefined) next.setup = stringList('装依赖命令', patch.setup);
+  if (patch.verify !== undefined) next.verify = stringList('验收命令', patch.verify);
+  if (patch.denyReadExtra !== undefined) next.denyReadExtra = stringList('禁读路径', patch.denyReadExtra).map(relativePath);
+  if (patch.rules !== undefined) {
+    if (patch.rules === null) next.rules = null;
+    else {
+      try { next.rules = await realpath(resolve(patch.rules)); }
+      catch { throw new Error(`找不到规则文件：${patch.rules}。请确认文件存在。`); }
+    }
+  }
+  return withLock(paths().projects, async () => {
+    const file = join(paths().projects, `${name}.json`);
+    const current = await readJson<Record<string, unknown>>(file).catch((e) => { if (hasCode(e, 'ENOENT')) throw new Error(`没有登记叫 ${name} 的项目。`); throw e; });
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null) delete current[key];
+      else current[key] = value;
+    }
+    await writeJson(file, current);
+    return { setup: [], verify: [], denyReadExtra: [], worktreeRoot: '.claude/worktrees', ...current, name } as unknown as Project;
+  });
+}
+
+// 只移除工作台登记：删除 ~/.xagents/projects/<name>.json，不碰仓库、工作副本、任务和历史。
+// 排队/运行中的活、残留的准备或选手进程、开放的群聊都拒绝；已结束的活和已关闭的群聊只是历史，不阻止。
+// 检查和删除在项目登记锁内重新确认，不能只信界面传来的快照（docs/tasks/TASK-003.md）。
+export async function removeProject(name: string) {
+  safeName(name);
+  return withLock(paths().projects, async () => {
+    const file = join(paths().projects, `${name}.json`);
+    await readJson(file).catch((e) => { if (hasCode(e, 'ENOENT')) throw new Error(`没有登记叫 ${name} 的项目。`); throw e; });
+    const jobs = await listJobs().catch((e) => { if (hasCode(e, 'ENOENT')) return []; throw e; });
+    const mine = jobs.filter(job => job.project === name);
+    const live = mine.filter(job => active(job));
+    if (live.length) throw new Error(`这个项目还有 ${live.length} 件排队或运行中的活（${live.map(j => j.id).join('、')}），先等它们结束或停下，再移除登记。`);
+    for (const job of mine) {
+      const until = leftBy(job);
+      if (stillRunning(job.setupPid, job.setupSince, until)) throw new Error(`任务 ${job.id} 还留着准备进程，先运行 xagents stop ${job.id} 收尾，再移除登记。`);
+      if (stillRunning(job.workerPid, job.workerSince, until)) throw new Error(`任务 ${job.id} 还留着选手进程，先运行 xagents stop ${job.id} 收尾，再移除登记。`);
+      if (alive(job.pid, job.pidSince) || (!job.started && alive(job.queuedBy, job.queuedSince)))
+        throw new Error(`任务 ${job.id} 的派发进程还在，先等它退出，再移除登记。`);
+    }
+    const open = (await listChats()).filter(chat => chat.project === name && chat.state === 'open');
+    if (open.length) throw new Error(`这个项目还有 ${open.length} 个开放的群聊（${open.map(c => c.title || c.id).join('、')}），先关闭群聊，再移除登记。`);
+    await rm(file);
+    return { name };
   });
 }
 export async function addProject(name: string, repo: string, options: Partial<Project> & { createOnly?: boolean }) {

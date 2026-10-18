@@ -13,6 +13,8 @@ export const channels = {
   updateDownload: 'xa:update-download', updateRestart: 'xa:update-restart', setAutoUpdateCheck: 'xa:auto-update-check',
   getView: 'xa:get-view', view: 'xa:view', open: 'xa:open',
   projectChoose: 'xa:project-choose', projectRegister: 'xa:project-register',
+  projectChooseRules: 'xa:project-choose-rules', projectOpen: 'xa:project-open',
+  projectUpdate: 'xa:project-update', projectRemove: 'xa:project-remove', projectCheck: 'xa:project-check',
   planDispatch: 'xa:plan-dispatch', planSpec: 'xa:plan-spec',
   decide: 'xa:decide', redo: 'xa:redo', stop: 'xa:stop', comment: 'xa:comment',
   teamSay: 'xa:team-say', teamStop: 'xa:team-stop',
@@ -54,6 +56,11 @@ export type PlanDispatchInput = { project: string; taskId: string; who: string[]
 export type PlanSpecInput = { project: string; spec: string };
 // check：快速体检的结构化结果；check 没跑成时是 null，原因在 checkError。体检失败不影响已完成的登记。
 export type ProjectRegistration = { project: RegisteredProject; check: ProjectCheck | null; checkError: string | null };
+// 项目管理（docs/tasks/TASK-003.md）：编辑登记时窗口只能交这些字段；窗口永远交不进仓库路径。
+// worktreeRoot、denyReadExtra 是仓库内相对路径；setup、verify 是命令；rules 只能是 null（清除）或规则文件选择令牌。
+export type ProjectUpdateInput = { label?: string; worktreeRoot?: string; setup?: string[]; verify?: string[]; denyReadExtra?: string[]; rules?: string | null };
+// 规则文件选择：展示路径给主人看，真实路径只凭一次性令牌在登记时换回。
+export type ProjectFileChoice = { selectionId: string; path: string };
 export const defaultColumns = { running: '#2f6bd8', attention: '#64748b', done: '#2c8a55' };
 export type Settings = { keepAwake: boolean; notifications: boolean; appearance: Appearance; storage: Storage; limits: Limits; columns?: Record<string, string>; openAtLogin: boolean; workers: WorkersPolicy; networkAllowed: boolean; deepseek?: DeepseekEndpoint };
 // archivedProjects：整份归档名单替换。界面从 View.projects[].archived 算出名单再交过来，不从设置里读这份名单。
@@ -117,6 +124,17 @@ export type XaBridge = {
   projectChoose(): Promise<ProjectChoice | null>;
   // 只认本窗口、仍有效、没用过的令牌；仓库路径只来自后台记住的那次选择。成功后发布新 View。
   projectRegister(selectionId: string, input: ProjectRegisterInput): Promise<ProjectRegistration>;
+  // 项目管理（docs/tasks/TASK-003.md）：全部按已登记项目名由后台解析，窗口交不进任何仓库路径。
+  // 打开仓库目录（系统访达/资源管理器）；不存在或未登记报中文原因。
+  projectOpen(name: string): Promise<void>;
+  // 编辑登记：只改提交的字段，体检结果、验收基线和未知字段原样保留；rules 只收 null 或规则文件选择令牌。
+  projectUpdate(name: string, patch: ProjectUpdateInput): Promise<void>;
+  // 只移除登记（删登记文件），不碰仓库、任务、历史和 Git 数据；有排队/运行的活、残留进程或开放群聊时拒绝。
+  projectRemove(name: string): Promise<void>;
+  // 快速/完整体检：返回结构化结果；同一项目体检进行中会拒绝重入，不同项目可并行。
+  projectCheck(name: string, kind: 'quick' | 'full'): Promise<ProjectCheck>;
+  // 规则文件选择（编辑登记用）：系统文件选择器，取消返回 null；展示路径给主人看，真实路径只凭一次性令牌带回。
+  projectChooseRules(): Promise<ProjectFileChoice | null>;
   // 规划派发（docs/tasks/TASK-006.md）：返回新任务号；失败给后台的中文原因。成功后发布新 View。
   planDispatch(input: PlanDispatchInput): Promise<string[]>;
   // 打开 Task Spec（docs/tasks/TASK-006.md）：只交项目名和仓库内相对路径，主进程解析出真实文件再打开；

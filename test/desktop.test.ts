@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, symlink, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, symlink, rm, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -27,8 +27,8 @@ import { writeAtomic, writeJson as atomicJson } from '../src/core/fsx.ts';
 import { derive } from '../app/renderer/lib/board.ts';
 import type { Job } from '../src/core/job.ts';
 import { context, until } from './helpers.ts';
-import { PROJECT_SELECTION_TTL_MS, projectActions, projectSelections, suggestedProjectLabel, suggestedProjectName } from '../app/main/project-bridge.ts';
-import { addProject, loadProject, projectBudget } from '../src/core/project.ts';
+import { PROJECT_SELECTION_TTL_MS, fileSelections, projectActions, projectManageActions, projectPatch, projectSelections, suggestedProjectLabel, suggestedProjectName } from '../app/main/project-bridge.ts';
+import { addProject, loadProject, projectBudget, removeProject, updateProject } from '../src/core/project.ts';
 import { parseBudget } from '../src/core/budget.ts';
 import type { Budget } from '../src/core/budget.ts';
 import { checkProject } from '../src/core/project-check.ts';
@@ -215,7 +215,8 @@ test('buildView：每件活带项目名和打分（只有当前一版、标签�
   for (const j of [rated, external, plain]) await writeJson(join(home, 'jobs', j.id, 'job.json'), j);
   const before = (await readdir(home, { recursive: true })).sort();
   const view = await buildView();
-  assert.deepEqual(view.projects, [{ name: '没活的项目', label: '没活的项目', repo: '/unused', archived: false }, { name: '派活工作台', label: '派活工作台', repo: undefined, archived: false }, { name: '画布', label: '画布', repo: '/unused', archived: false }].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')));
+  const config = { worktreeRoot: '.claude/worktrees', setup: [], verify: [], denyReadExtra: [], rules: null };
+  assert.deepEqual(view.projects, [{ name: '没活的项目', label: '没活的项目', repo: '/unused', archived: false, config }, { name: '派活工作台', label: '派活工作台', repo: null, archived: false, config: null }, { name: '画布', label: '画布', repo: '/unused', archived: false, config }].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')));
   const byId = (id: string) => view.jobs.find(j => j.id === id)!;
   assert.equal(byId('rated').project, '派活工作台'); assert.equal(byId('plain').project, '画布');
   assert.deepEqual(byId('rated').rating, { score: 4, good: '一次做对', improve: '偏慢', at,
@@ -777,4 +778,123 @@ test('项目登记桥：通道在白名单里，主进程先验来源再交给�
   const preload = await readFile(resolve('app/preload/index.ts'), 'utf8');
   assert.match(preload, /projectChoose: \(\) => ipcRenderer\.invoke\(channels\.projectChoose\)/);
   assert.match(preload, /projectRegister: \(selectionId, input\) => ipcRenderer\.invoke\(channels\.projectRegister, selectionId, input\)/);
+});
+
+// 项目管理桥（docs/tasks/TASK-003.md）：打开仓库只按登记名解析；编辑白名单 + 规则文件一次性令牌；
+// 体检按项目内存互斥；移除走核心锁内检查。窗口交不进任何绝对路径。
+function manageBridge(c: ProjectCtx, extra: Partial<Parameters<typeof projectManageActions>[0]> = {}) {
+  const views: string[] = [];
+  const manage = projectManageActions({
+    loadProject, updateProject, removeProject,
+    checkProject: async () => ({ at: '', seconds: 0, items: [], ok: true }),
+    openPath: async () => '',
+    chooseFile: async () => null,
+    realpath,
+    isFile: async () => true,
+    updated: async () => { views.push('view'); },
+    ...extra,
+  });
+  return { manage, views };
+}
+
+test('项目管理桥：打开仓库由后台按登记名解析，窗口交不进路径', async t => {
+  const c = await projectCore(t);
+  await addProject('演示', c.repo, { worktreeRoot: '.worktrees' });
+  const opened: string[] = [];
+  const { manage } = manageBridge(c, { openPath: async path => { opened.push(path); return ''; } });
+  await manage.open(['演示'], 1);
+  assert.deepEqual(opened, [c.repo], '仓库路径只来自登记处');
+  await assert.rejects(manage.open(['演示', '/etc'], 1), /项目名字/);
+  await assert.rejects(manage.open([], 1));
+  await assert.rejects(manage.open([1], 1));
+  await assert.rejects(manage.open(['../外面'], 1));
+  await assert.rejects(manage.open(['没登记'], 1), /没有登记/);
+  // 打开失败（系统给的原因）原样交回。
+  const { manage: failing } = manageBridge(c, { openPath: async () => '找不到文件夹' });
+  await assert.rejects(failing.open(['演示'], 1), /找不到文件夹/);
+});
+
+test('项目管理桥：编辑严格白名单，规则文件只认一次性令牌，别的路径进不来', async t => {
+  const c = await projectCore(t);
+  await addProject('演示', c.repo, { worktreeRoot: '.worktrees' });
+  await writeFile(join(c.repo, 'RULES.md'), '# 规矩\n');
+  const updates: unknown[][] = [];
+  const { manage, views } = manageBridge(c, { updateProject: async (...args: unknown[]) => { updates.push(args); return args[0] as never; } });
+  // 形状和白名单：不认识的字段、错的类型、空的 rules 都进不了核心。
+  const bad: unknown[] = [
+    null, [], 'x', { label: 1 }, { worktreeRoot: 1 }, { setup: 'npm ci' }, { setup: [1] },
+    { verify: ['ok', null] }, { denyReadExtra: {} }, { rules: 1 }, { rules: '' }, { repo: c.repo }, { name: '别的' }, { budget: {} },
+  ];
+  for (const value of bad) await assert.rejects(manage.update(['演示', value], 1));
+  await assert.rejects(manage.update(['演示'], 1), /修改内容/);
+  await assert.rejects(manage.update(['演示', { label: 'x' }, 1], 1), /修改内容/);
+  assert.deepEqual(updates, [], '非法请求不进核心');
+  // 规则文件：选择拿一次性令牌，别的窗口、伪造、重复使用都不行。
+  const { manage: withPicker } = manageBridge(c, {
+    chooseFile: async () => join(c.repo, 'RULES.md'),
+    updateProject: async (...args: unknown[]) => { updates.push(args); return args[0] as never; },
+  });
+  const picked = await withPicker.chooseRules([], 1);
+  assert.ok(picked);
+  assert.equal(picked!.path, join(c.repo, 'RULES.md'));
+  await assert.rejects(withPicker.update(['演示', { rules: '/etc/passwd' }], 1), /失效/);
+  await assert.rejects(withPicker.update(['演示', { rules: picked!.selectionId }], 2), /失效/);
+  await withPicker.update(['演示', { rules: picked!.selectionId }], 1);
+  await assert.rejects(withPicker.update(['演示', { rules: picked!.selectionId }], 1), /失效/, '令牌用一次就作废');
+  assert.deepEqual(updates[0], ['演示', { rules: join(c.repo, 'RULES.md') }], '换回的是后台解析的真实路径');
+  // 取消选择返回 null，不是错误（默认的选择器替身返回 null）。
+  assert.equal(await manage.chooseRules([], 1), null);
+  await assert.rejects(withPicker.chooseRules([1], 1), /不需要参数/);
+  // 正常编辑：字段照原样转给核心，成功后发布新 View。
+  await manage.update(['演示', { label: '新名字', worktreeRoot: '.copies', setup: ['npm ci'] }], 1);
+  assert.deepEqual(updates[1], ['演示', { label: '新名字', worktreeRoot: '.copies', setup: ['npm ci'] }]);
+  assert.deepEqual(views, ['view']);
+});
+
+test('项目管理桥：体检按项目内存互斥，不同项目可并行；类型只认快速/完整', async t => {
+  const c = await projectCore(t);
+  await addProject('甲', c.repo, { worktreeRoot: '.worktrees' });
+  await addProject('乙', c.repo, { worktreeRoot: '.worktrees' });
+  const gates = new Map<string, () => void>();
+  const kinds: string[] = [];
+  const { manage } = manageBridge(c, {
+    checkProject: async (name: string, options: { quick?: boolean }) => {
+      kinds.push(`${name}:${options.quick ? 'quick' : 'full'}`);
+      await new Promise<void>(resolve => gates.set(name, resolve));
+      return { at: '', seconds: 0, items: [], ok: true };
+    },
+  });
+  const first = manage.check(['甲', 'quick'], 1);
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(manage.check(['甲', 'full'], 1), /正在体检/);
+  const second = manage.check(['乙', 'full'], 1);
+  await new Promise(resolve => setImmediate(resolve));
+  gates.get('甲')!(); gates.get('乙')!();
+  assert.deepEqual(await first, { at: '', seconds: 0, items: [], ok: true });
+  await second;
+  assert.deepEqual(kinds, ['甲:quick', '乙:full'], '不同项目各自进行');
+  for (const args of [[], ['甲'], ['甲', 'fast'], ['甲', 1], [1, 'quick']]) await assert.rejects(manage.check(args as unknown[], 1));
+});
+
+test('项目管理桥：移除只交项目名，成功后发布新 View；桥和通道接在白名单里', async t => {
+  const c = await projectCore(t);
+  await addProject('演示', c.repo, { worktreeRoot: '.worktrees' });
+  const { manage, views } = manageBridge(c);
+  await assert.rejects(manage.remove([], 1), /项目名字/);
+  await manage.remove(['演示'], 1);
+  await assert.rejects(loadProject('演示'), /没有登记|ENOENT/);
+  assert.deepEqual(views, ['view']);
+  // 通道在主进程先验来源再交给专用动作；预加载只开放这几个方法。
+  for (const channel of ['projectChooseRules', 'projectOpen', 'projectUpdate', 'projectRemove', 'projectCheck'] as const)
+    assert.ok(channels[channel].startsWith('xa:project-'));
+  const main = await readFile(resolve('app/main/index.ts'), 'utf8');
+  assert.match(main, /ipcMain\.handle\(channels\.projectOpen, async \(event, \.\.\.args: unknown\[\]\) => \{ guard\(event\); await manage\.open\(args\); \}\)/);
+  assert.match(main, /ipcMain\.handle\(channels\.projectUpdate, async \(event, \.\.\.args: unknown\[\]\) => \{ guard\(event\); await manage\.update\(args, event\.sender\.id\); \}\)/);
+  assert.match(main, /ipcMain\.handle\(channels\.projectCheck, async \(event, \.\.\.args: unknown\[\]\) => \{ guard\(event\); return manage\.check\(args\); \}\)/);
+  assert.match(main, /checkProject: \(name, options\) => checkProject\(name, options\)/);
+  const preload = await readFile(resolve('app/preload/index.ts'), 'utf8');
+  assert.match(preload, /projectCheck: \(name, kind\) => ipcRenderer\.invoke\(channels\.projectCheck, name, kind\)/);
+  assert.match(preload, /projectChooseRules: \(\) => ipcRenderer\.invoke\(channels\.projectChooseRules\)/);
+  // 编辑白名单本身：合法补丁的形状。
+  assert.deepEqual(projectPatch({ label: '名', setup: ['npm ci'], rules: null }), { label: '名', setup: ['npm ci'], rules: null });
 });

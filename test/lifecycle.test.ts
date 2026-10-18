@@ -569,7 +569,8 @@ test('项目显示名：登记时 --label，或用 project label 单独改；只
   assert.equal((await c.cli(['project', 'label', '没有这个', '名字'])).code, 1);
   process.env.XAGENTS_HOME = c.home;
   const { buildView } = await import('../src/core/view.ts');
-  assert.deepEqual((await buildView()).projects.find(p => p.name === '测试'), { name: '测试', label: '画布创作站', repo: join(c.repo), archived: false });
+  assert.deepEqual((await buildView()).projects.find(p => p.name === '测试'), { name: '测试', label: '画布创作站', repo: join(c.repo), archived: false,
+    config: { worktreeRoot: '.worktrees', setup: [], verify: [], denyReadExtra: [], rules: null } });
 });
 
 test('清理 Grok 活时，它在 ~/.grok/sessions 下的会话文件夹一起移进废纸篓；别的会话文件夹不动', { skip: isWindows ? '只属于 macOS：Grok 的会话文件夹名是按 macOS 上实测的写法算的；Windows 上不开 Grok 这一路' : false }, async t => {

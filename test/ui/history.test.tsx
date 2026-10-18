@@ -27,7 +27,7 @@ const rail = () => within(screen.getByRole('tablist', { name: '项目' })).getAl
 const rowTitles = () => [...document.querySelectorAll('.hsum .ellip')].map(e => e.textContent);
 function twoProjects() {
   const v = fixtureView();
-  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false }, { name: '画布', label: '画布', archived: false }, { name: '空项目', label: '空项目', archived: false }];
+  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false, repo: null, config: null }, { name: '画布', label: '画布', archived: false, repo: null, config: null }, { name: '空项目', label: '空项目', archived: false, repo: null, config: null }];
   v.jobs = [done('a1', '派活工作台', { started: at(0, 10), ended: at(0, 11), kind: '修复' }), done('a2', '派活工作台', { started: at(1, 15), ended: at(1, 16), kind: '实现' }),
     done('c1', '画布', { started: at(0, 8), ended: at(0, 8, 30), kind: '实现' }), done('c2', '画布', { started: at(5, 9), ended: at(5, 10), kind: '实现' }), done('c3', '画布', { started: at(5, 7), ended: at(5, 8), kind: '实现' })];
   return v;
@@ -233,7 +233,7 @@ test('看板上的项目数按“所有列一起”算：进行中只有画布�
   expect(doneCards().map(c => c.getAttribute('aria-label'))).toEqual(['派活工作台']);
 });
 test('项目名单里的显示名用于标签和左栏；老记录没有项目名归到“未归类”', async () => {
-  const v = fixtureView(); v.projects = [{ name: 'xa', label: '派活工作台', archived: false }];
+  const v = fixtureView(); v.projects = [{ name: 'xa', label: '派活工作台', archived: false, repo: null, config: null }];
   v.jobs = [done('a', 'xa'), done('b', '', { started: at(1, 18), ended: at(1, 19) }), fixtureJob('r', { project: 'xa', state: 'running', seconds: null })];
   show(v); await toHistory();
   expect(rail().map(r => r.slice(0, 2))).toEqual([['全部', '2'], ['派活工作台', '1'], ['未归类', '1']]);
@@ -243,7 +243,7 @@ test('项目名单里的显示名用于标签和左栏；老记录没有项目�
 
 test('已归档项目的卡不在已完成列，列头件数不含它们；进行中、验收中照常带项目标签', async () => {
   const v = fixtureView();
-  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false }, { name: '画布', label: '画布', archived: true }];
+  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false, repo: null, config: null }, { name: '画布', label: '画布', archived: true, repo: null, config: null }];
   v.jobs = [fixtureJob('run', { project: '画布', title: '还在画', state: 'running', seconds: null }), fixtureJob('attn', { project: '画布', title: '等验收', decision: null }),
     ...many('画布', 3, 1), ...many('派活工作台', 2, 2)];
   show(v); await screen.findByRole('tablist', { name: '页面' });
@@ -257,7 +257,7 @@ test('已归档项目的卡不在已完成列，列头件数不含它们；进�
 });
 test('两步归档发出整份名单；菜单入口不折叠，折起后仍有入口', async () => {
   const v = fixtureView();
-  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: true }, { name: '空项目', label: '空项目', archived: true }, { name: '画布', label: '画布', archived: false }];
+  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: true, repo: null, config: null }, { name: '空项目', label: '空项目', archived: true, repo: null, config: null }, { name: '画布', label: '画布', archived: false, repo: null, config: null }];
   v.jobs = [...many('画布', 1, 1), fixtureJob('run', { project: '派活工作台', title: '还在派', state: 'running', seconds: null })];
   show(v); await screen.findByRole('tablist', { name: '页面' });
   expect(doneCards().map(c => c.getAttribute('aria-label'))).toEqual(['画布']);
@@ -282,7 +282,7 @@ test('两步归档发出整份名单；菜单入口不折叠，折起后仍有�
 });
 test('归档还没存完时再点一次不再发；存完后按当时看板上的名单再发', async () => {
   const v = fixtureView();
-  v.projects = [{ name: '画布', label: '画布', archived: false }, { name: '派活工作台', label: '派活工作台', archived: false }];
+  v.projects = [{ name: '画布', label: '画布', archived: false, repo: null, config: null }, { name: '派活工作台', label: '派活工作台', archived: false, repo: null, config: null }];
   v.jobs = [...many('画布', 1, 1), ...many('派活工作台', 1, 2)];
   show(v); await screen.findByRole('tablist', { name: '页面' });
   let resolve: (value: unknown) => void = () => {};
@@ -309,7 +309,7 @@ test('归档保存失败：卡还在，提示条写保存失败和原因', async
   expect(screen.getByTestId('done').textContent).toBe('1');
 });
 test('未归类没有归档按钮，有名字的项目有', async () => {
-  const v = fixtureView(); v.projects = [{ name: 'xa', label: '派活工作台', archived: false }];
+  const v = fixtureView(); v.projects = [{ name: 'xa', label: '派活工作台', archived: false, repo: null, config: null }];
   v.jobs = [done('a', 'xa'), done('b', '')];
   show(v); await screen.findByRole('tablist', { name: '页面' });
   const unnamed = screen.getByRole('region', { name: '未归类' });
@@ -395,7 +395,7 @@ test('标题栏各处右键复用同一菜单，不折叠、不直接归档', as
 
 test('归档成功才提示，回推后卡消失；撤销使用最新名单、保留其他归档，成功关提示并恢复卡', async () => {
   const v = fixtureView();
-  v.projects = [{ name: 'canvas', label: '画布', archived: false }, { name: '旧项目', label: '旧项目', archived: true }];
+  v.projects = [{ name: 'canvas', label: '画布', archived: false, repo: null, config: null }, { name: '旧项目', label: '旧项目', archived: true, repo: null, config: null }];
   v.jobs = many('canvas', 1);
   let push: (view: View) => void = () => {};
   let finish: () => void = () => {};
@@ -409,7 +409,7 @@ test('归档成功才提示，回推后卡消失；撤销使用最新名单、�
   expect(screen.queryByText('撤销')).toBeNull();
   await act(async () => { finish(); await gate; });
   expect(screen.getByText('已归档 画布，可在历史页“已归档”里找回')).toBeTruthy();
-  act(() => push({ ...v, projects: [...v.projects.map(p => ({ ...p, archived: true })), { name: '新归档', label: '新归档', archived: true }] }));
+  act(() => push({ ...v, projects: [...v.projects.map(p => ({ ...p, archived: true })), { name: '新归档', label: '新归档', archived: true, repo: null, config: null }] }));
   expect(screen.queryByRole('region', { name: '画布' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '撤销' }));
   expect(window.xa.setSettings).toHaveBeenLastCalledWith({ archivedProjects: ['旧项目', '新归档'] });
@@ -420,7 +420,7 @@ test('归档成功才提示，回推后卡消失；撤销使用最新名单、�
 });
 
 test('撤销保存失败保留提示和动作，可重试；连续点击只存一次', async () => {
-  const v = fixtureView(); v.projects = [{ name: '画布', label: '画布', archived: false }]; v.jobs = many('画布', 1);
+  const v = fixtureView(); v.projects = [{ name: '画布', label: '画布', archived: false, repo: null, config: null }]; v.jobs = many('画布', 1);
   show(v); await screen.findByRole('tablist', { name: '页面' });
   archive('画布'); await screen.findByText('已归档 画布，可在历史页“已归档”里找回');
   window.xa.setSettings = vi.fn(async () => { throw new Error('磁盘满了。'); });

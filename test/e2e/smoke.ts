@@ -85,7 +85,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
     delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL;
     application = await _electron.launch({ args: [resolve('out/main/index.js')],
-      env: { ...env, XAGENTS_HOME: home, XAGENTS_USER_DATA: join(temp, 'electron'), XAGENTS_E2E: '1' } });
+      env: { ...env, XAGENTS_HOME: home, XAGENTS_USER_DATA: join(temp, 'electron'), XAGENTS_E2E: '1', XAGENTS_FAKE_WORKER: resolve('test/fixtures/worker.ts') } });
     const page = await application.firstWindow();
     await page.waitForFunction(() => document.querySelector('[data-testid="running"]')?.textContent === '1');
     // 已完成列的项目卡默认折起（只有项目名和件数）；后面的检查要看卡里的行，先把用到的项目记成“已展开”再刷新。
@@ -105,7 +105,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.equal(preferences.contextIsolation, true); assert.equal(preferences.sandbox, true);
     assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
     assert.deepEqual(await page.evaluate(() => [typeof Reflect.get(window, 'require'), typeof Reflect.get(window, 'process'), typeof Reflect.get(window, '__xaE2E')]), ['undefined', 'undefined', 'undefined']);
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'projectChoose', 'projectRegister', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectCheck', 'projectChoose', 'projectChooseRules', 'projectOpen', 'projectRegister', 'projectRemove', 'projectUpdate', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
     // 接入 AI：后台只认四个名字，别的一律拒绝，不碰任何文件。
     for (const bad of ['../../etc', 'CLAUDE', '']) assert.match(await page.evaluate(async ai => { try { await window.xa.connect(ai as never); return 'ok'; } catch (e) { return String(e); } }, bad), /只收一个 AI 名字/);
     assert.match(await page.evaluate(async () => { try { await window.xa.disconnect('x' as never); return 'ok'; } catch (e) { return String(e); } }), /只收一个 AI 名字/);
@@ -245,7 +245,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.equal(await application.evaluate(({ nativeTheme }) => nativeTheme.themeSource), 'system');
     // 顶栏：分段“看板 历史 表现”，没有品牌字和“在跑”文字；看板不带件数角标（件数在“验收中”列头）；三家额度环，Cursor 用得最多的池 86% 是琥珀色。
     const header = page.locator('header.top');
-    assert.deepEqual(await header.getByRole('tab').allTextContents(), ['看板', '协作', '历史', '表现']);
+    assert.deepEqual(await header.getByRole('tab').allTextContents(), ['看板', '规划', '协作', '历史', '表现']);
     assert.equal(await page.getByRole('heading', { name: '验收中' }).count(), 1);
     const boardText = await page.locator('#v-board').textContent();
     for (const word of ['等你处理', '件等你', '等你挑', '要你处理']) assert.ok(!boardText!.includes(word), `看板上不该有“${word}”`);
@@ -380,8 +380,8 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       // 还原默认值，后续既有截图继续使用同一组数据。
       await quotaStop.selectOption('80');
       await page.waitForFunction(async () => (await window.xa.getSettings()).limits.quotaStop === 80);
-      assert.deepEqual(await page.locator('[data-who]').evaluateAll(rows => rows.map(r => r.getAttribute('data-who'))), ['codex', 'codex-luna', 'grok', 'cursor-grok', 'cursor-opus', 'cursor-sonnet', 'deepseek', 'deepseek-flash']);
-      assert.equal(await page.getByRole('switch', { name: '启用' }).count(), 8);
+      assert.deepEqual(await page.locator('[data-who]').evaluateAll(rows => rows.map(r => r.getAttribute('data-who'))), ['codex', 'codex-luna', 'grok', 'cursor-grok', 'cursor-opus', 'cursor-sonnet', 'kimi', 'deepseek', 'deepseek-flash']);
+      assert.equal(await page.getByRole('switch', { name: '启用' }).count(), 9);
       // DeepSeek 组在最下面：只开高档，没有快速版，组头不写用量（按用量扣它自己的余额）。
       await page.getByRole('group', { name: 'DeepSeek · Flash · DeepSeek V4.1 Flash' }).scrollIntoViewIfNeeded();
       await shot(variant.name, 'settings-workers-deepseek');
@@ -435,7 +435,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       }
       await page.keyboard.press('Escape');
       // 历史（展开一批看各家）和各家表现。
-      await page.keyboard.press('Meta+3');
+      await page.keyboard.press('Meta+4');
       // 点一行只展开（不再弹窗）：每家一行，看得到打的分、优点毛病标签和评语。
       await page.locator('.hsum').filter({ hasText: '两家对比：修复题' }).click();
       assert.equal(await page.getByRole('dialog').count(), 0, '点历史里的一行只展开，不弹窗');
@@ -445,7 +445,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       assert.equal(await members.nth(1).locator('.hrate .chip-bad').count(), 2, '毛病标签：需要返工、夸大结论');
       await members.nth(1).getByText('说全过了，其实有一项没跑').waitFor();
       await shot(variant.name, 'history');
-      await page.keyboard.press('Meta+4');
+      await page.keyboard.press('Meta+5');
       await page.getByRole('heading', { name: '表现', level: 1 }).waitFor();
       // 每格：平均分、返工比例、优点（绿）毛病（红）标签；打了分不到 3 件的淡显；点一格在这一行下面展开最近的评语。
       const codexCell = page.locator('.pcell').filter({ hasText: '4.0 分' });
@@ -498,11 +498,14 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     await page.emulateMedia({ colorScheme: 'light' });
     await topbar('light', 1280, 'focus');
     await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), '规划');
+    await page.keyboard.press('ArrowRight');
     await page.locator('.chat-empty, .chat-layout').first().waitFor();
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), '协作');
     await page.keyboard.press('ArrowRight');
     await page.getByRole('heading', { name: '历史' }).waitFor();
     assert.equal(await page.evaluate(() => document.activeElement?.textContent), '历史');
+    await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await page.getByTestId('running').waitFor();
@@ -588,7 +591,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       assert.ok(fit.page <= 0 && fit.clipped === 0, `${variant.name}：分组后看板不许横向溢出`);
       await shot(variant.name, 'board-projects');
       // 历史页：左栏“全部”加每个项目（件数、最近一次），右栏按天分组。
-      await page.keyboard.press('Meta+3');
+      await page.keyboard.press('Meta+4');
       const rail = page.getByRole('tab', { name: /^全部/ }); await rail.click();
       const tabs = await page.locator('.history-layout .sidenav-tab').evaluateAll(list => list.map(t => [t.querySelector('.sidenav-label')!.textContent, t.querySelector('.sidenav-badge')!.textContent]));
       assert.deepEqual(tabs, [['全部', '17'], ['画布', '9'], ['派活工作台', '8']], '左栏：全部，再按最近活动排项目，件数是一批算一件');
@@ -680,7 +683,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.ok(await page.locator('.column.c-running .ctitle > .chip', { hasText: '画布' }).count() >= 1);
     assert.ok((await page.locator('.column.c-attention').textContent())!.includes('协同光标'), '验收中的画布活还在');
     assert.equal(await page.locator('.column.c-attention .ctitle > .chip', { hasText: '画布' }).count(), 1);
-    await page.keyboard.press('Meta+3');
+    await page.keyboard.press('Meta+4');
     const archivedFold = page.getByRole('button', { name: '已归档 1 个项目', exact: true });
     await archivedFold.waitFor();
     assert.equal(await archivedFold.getAttribute('aria-expanded'), 'false', '已归档默认折起');
@@ -715,7 +718,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       await page.locator('.column.c-done section', { hasText: '派活工作台' }).waitFor();
       assert.equal(await page.locator('.column.c-done section', { hasText: '画布' }).count(), 0);
       await shot(variant.name, 'archive-board');
-      await page.keyboard.press('Meta+3');
+      await page.keyboard.press('Meta+4');
       const fold = page.getByRole('button', { name: '已归档 1 个项目', exact: true });
       await fold.waitFor();
       if (await fold.getAttribute('aria-expanded') !== 'true') await fold.click();

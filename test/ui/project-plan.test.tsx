@@ -25,8 +25,8 @@ const absentPlan = (project: string): TaskPlan => ({ present: false, project, ta
 function planView(plans: View['plans']): View {
   const view = fixtureView();
   view.projects = [
-    { name: 'alpha', label: '甲项目', repo: '/repo/alpha', archived: false },
-    { name: 'bare', label: '乙项目', repo: '/repo/bare', archived: false },
+    { name: 'alpha', label: '甲项目', repo: '/repo/alpha', archived: false, config: null },
+    { name: 'bare', label: '乙项目', repo: '/repo/bare', archived: false, config: null },
   ];
   view.plans = plans;
   return view;

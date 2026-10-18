@@ -22,11 +22,21 @@ import { slimCandidates } from './slim.ts';
 import { dashboard, ranges } from './dashboard.ts';
 import { listChats, readMessages, pendingForLead } from './chat.ts';
 import { teamTasks } from './team-tasks.ts';
-import type { View, ViewJob, ViewTeam, ViewChat } from './view-types.ts';
+import type { View, ViewJob, ViewTeam, ViewChat, ViewProject } from './view-types.ts';
 import { readTaskPlan } from './task-plan.ts';
 import type { TaskPlan } from './task-plan.ts';
 
 // 只读取登记处；不修正任务、不查远程额度、不触发自检。
+// 已登记项目的高级配置（docs/tasks/TASK-003.md）：设置页编辑弹窗按它预填。某个字段读不出形状（旧登记、坏文件）就给缺省，不拖垮整份视图。
+function projectConfig(parsed: Record<string, unknown>): ViewProject['config'] {
+  const text = (value: unknown) => typeof value === 'string' ? value : undefined;
+  const list = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string') ? value as string[] : [];
+  return {
+    worktreeRoot: text(parsed.worktreeRoot) ?? '.claude/worktrees',
+    setup: list(parsed.setup), verify: list(parsed.verify), denyReadExtra: list(parsed.denyReadExtra),
+    rules: text(parsed.rules) ?? null,
+  };
+}
 export async function buildView(options: ListedOptions = {}): Promise<View> {
   const settings = await readSettings();
   const models = viewModels(settings.models, await readModelsCache());
@@ -63,12 +73,13 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
   const listed = await listedProviders(options), endpoint = await codexEndpoint();
   const quota = await readQuotaCache(endpoint);
   const registered = (await readdir(p.projects).catch(error => { if (hasCode(error, 'ENOENT')) return []; throw error; })).filter(n => n.endsWith('.json')).map(n => n.slice(0, -5));
-  const labels = new Map<string, string>(), repos = new Map<string, string>();
+  const labels = new Map<string, string>(), repos = new Map<string, string>(), configs = new Map<string, ViewProject['config']>();
   for (const name of registered) {
     try { const raw = await readOptional(join(p.projects, `${name}.json`)); const parsed = raw.trim() ? JSON.parse(raw) as { label?: unknown; repo?: unknown } : {};
     if (typeof parsed.label === 'string' && parsed.label.trim()) labels.set(name, parsed.label.trim());
-    if (typeof parsed.repo === 'string' && parsed.repo) repos.set(name, parsed.repo); }
-    catch { /* 坏的登记文件：显示名退回项目名，路径不显示 */ }
+    if (typeof parsed.repo === 'string' && parsed.repo) repos.set(name, parsed.repo);
+    configs.set(name, projectConfig(parsed)); }
+    catch { /* 坏的登记文件：显示名退回项目名，路径不显示，配置不展示 */ }
   }
   const projectNames = [...new Set([...registered, ...jobs.map(job => job.project).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   const archived = new Set(archivedProjects);
@@ -89,7 +100,7 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
     updated: new Date().toISOString(), selfcheck: await readSelfcheck(),
     unlisted: unlistedProviders(listed),
     roster: keptWhos.filter(who => listedWho(listed, who)).map(who => ({ who, name: spec(who).name, model: spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })),
-    stats: stats(jobs), profiles: profiles(jobs), quota: boardQuota(quota).filter(p => listed.some(l => l.icon === p.icon && l.reason === null) && !(p.icon === 'codex' && endpoint.custom)), quotaAt: quota?.queriedAt ?? null, workers: { ...workers }, projects: projectNames.map(name => ({ name, label: labels.get(name) ?? name, repo: repos.get(name), archived: archived.has(name) })), plans, jobs: rows, batches,
+    stats: stats(jobs), profiles: profiles(jobs), quota: boardQuota(quota).filter(p => listed.some(l => l.icon === p.icon && l.reason === null) && !(p.icon === 'codex' && endpoint.custom)), quotaAt: quota?.queriedAt ?? null, workers: { ...workers }, projects: projectNames.map(name => ({ name, label: labels.get(name) ?? name, repo: repos.get(name) ?? null, archived: archived.has(name), config: configs.get(name) ?? null })), plans, jobs: rows, batches,
     teams: await viewTeams(),
     chats,
     models,

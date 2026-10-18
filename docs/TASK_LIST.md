@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|
 | [TASK-001](tasks/TASK-001.md) | 原生文件夹选择与安全项目登记桥 | PASSED | P1 | High | 无 |
 | [TASK-002](tasks/TASK-002.md) | 设置页可视化登记项目 | PASSED | P1 | Medium | TASK-001 PASSED |
-| [TASK-003](tasks/TASK-003.md) | 已登记项目的管理与高级配置 | READY | P2 | Medium | TASK-002 PASSED |
+| [TASK-003](tasks/TASK-003.md) | 已登记项目的管理与高级配置 | PASSED | P2 | Medium | TASK-002 PASSED |
 | [TASK-004](tasks/TASK-004.md) | 负责人规则接入项目任务台账 | PASSED | P1 | Low | 无 |
 | [TASK-005](tasks/TASK-005.md) | 安全识别 TASK_LIST 与 Task Spec | PASSED | P1 | High | TASK-004 PASSED |
 | [TASK-006](tasks/TASK-006.md) | 工作台任务规划视图与受控派发 | PASSED_WITH_NOTES | P1 | High | TASK-005 PASSED |
@@ -21,7 +21,7 @@
 
 ## 当前阶段
 
-- 可执行：`P1 TASK-009` 修正与 `P2 TASK-003` 集成仍须在独立 Git 工作副本/功能分支中处理；当前含未提交改动的同一工作区不得直接用整文件互相覆盖。
+- 可执行：TASK-003 已通过并整合；P1 TASK-009 仍待复审登记。独立任务继续使用独立 Git 工作副本，禁止整文件覆盖其他任务的新改动。
 - 项目登记链：先打通安全、可测试的后台登记能力；界面和后续管理不能绕过该能力直接操作路径或登记文件。
 - 规划驱动链：先统一负责人对任务台账的理解，再实现解析，最后接入工作台界面和派发；Task Spec 的推荐执行者不约束工作台选手。
 - 无人看守链：先让每次执行都能有界停止并留下证据，再建自治执行台账和推进器，然后接负责人 AI 诊断/恢复，最后开放细拆、审查、验收和界面；任何阶段都不得无限重试。

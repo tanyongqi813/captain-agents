@@ -140,6 +140,8 @@ export const fixtureBridge = (extra: Partial<XaBridge> = {}): XaBridge => ({
   onOpen: () => () => {}, getView: vi.fn(async () => fixtureView()), onView: () => () => {},
   projectChoose: vi.fn(async () => null),
   projectRegister: vi.fn(async () => { throw new Error('测试没有准备项目登记'); }),
+  projectOpen: vi.fn(async () => {}), projectUpdate: vi.fn(async () => {}), projectRemove: vi.fn(async () => {}),
+  projectCheck: vi.fn(async () => { throw new Error('测试没有准备项目体检'); }), projectChooseRules: vi.fn(async () => null),
   planDispatch: vi.fn(async () => { throw new Error('测试没有准备规划派发'); }),
   planOpenSpec: vi.fn(async () => { throw new Error('测试没有准备打开 Task Spec'); }),
   ...extra,

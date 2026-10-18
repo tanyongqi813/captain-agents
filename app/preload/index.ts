@@ -52,6 +52,11 @@ const bridge: XaBridge = {
   getView: () => ipcRenderer.invoke(channels.getView) as Promise<View>,
   projectChoose: () => ipcRenderer.invoke(channels.projectChoose),
   projectRegister: (selectionId, input) => ipcRenderer.invoke(channels.projectRegister, selectionId, input),
+  projectOpen: name => ipcRenderer.invoke(channels.projectOpen, name),
+  projectUpdate: (name, patch) => ipcRenderer.invoke(channels.projectUpdate, name, patch),
+  projectRemove: name => ipcRenderer.invoke(channels.projectRemove, name),
+  projectCheck: (name, kind) => ipcRenderer.invoke(channels.projectCheck, name, kind),
+  projectChooseRules: () => ipcRenderer.invoke(channels.projectChooseRules),
   planDispatch: input => ipcRenderer.invoke(channels.planDispatch, input),
   planOpenSpec: input => ipcRenderer.invoke(channels.planSpec, input),
   onView(callback) {

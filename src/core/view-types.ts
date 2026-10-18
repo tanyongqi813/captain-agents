@@ -10,6 +10,9 @@ import type { ChannelMessage, ReviewItem, TeamPhase, TeamReason, TeamState } fro
 import type { TaskPlan } from './task-plan.ts';
 
 export type Column = 'running' | 'attention' | 'done';
+// 设置页“项目”里一个已登记项目的当前配置（docs/tasks/TASK-003.md）：编辑弹窗按它预填，界面不自己读登记处。
+export type ViewProject = { name: string; label: string; repo: string | null; archived: boolean;
+  config: { worktreeRoot: string; setup: string[]; verify: string[]; denyReadExtra: string[]; rules: string | null } | null };
 // 负责人打的分（只带当前这一版，不带改分前的历史）；标签的好坏由核心分好（src/core/profiles.ts），界面不自己分。
 export type ViewRating = {
   score?: Rating['score']; good?: string; improve?: string; external?: string; at: string;
@@ -108,7 +111,8 @@ export type View = {
   // 项目名单：登记处里的项目，加上任务里出现过但没登记的；label 是给人看的名字（现在就是项目名）。
   // repo 只有登记过的项目有（从登记文件读）；只在任务里出现过的项目没有这一字段，界面不显示路径行。
   // archived：主人归档了这个项目（设置里的 archivedProjects）；已完成列和历史页的“全部”不再显示它，在跑、在验收的照常显示。
-  projects: { name: string; label: string; repo?: string; archived: boolean }[];
+  // config：已登记项目当前的高级配置（docs/tasks/TASK-003.md 设置页编辑用）；只在任务里出现过、没登记的项目是 null。
+  projects: ViewProject[];
   // 每个已登记项目的任务规划（docs/TASK_LIST.md 识别结果，src/core/task-plan.ts），key 是项目名。
   // 没有台账的项目是 { present: false }；某个项目规划损坏只反映在它自己的 diagnostics 里，不拖垮看板。
   plans: Record<string, TaskPlan>;

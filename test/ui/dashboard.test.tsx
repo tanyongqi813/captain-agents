@@ -23,7 +23,7 @@ const slice = (range: Range, project = '', extra: Partial<DashboardSlice> = {}):
 });
 function dashView(): View {
   const v = fixtureView();
-  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false }, { name: '<b>画布</b>', label: '<b>画布</b>', archived: false }];
+  v.projects = [{ name: '派活工作台', label: '派活工作台', archived: false, repo: null, config: null }, { name: '<b>画布</b>', label: '<b>画布</b>', archived: false, repo: null, config: null }];
   v.dashboard = (['today', '7d', '30d'] as Range[]).flatMap(r => [slice(r), slice(r, '派活工作台', { kpi: { ...slice(r).kpi, jobs: 9, done: 9, failed: 0 } }), slice(r, '<b>画布</b>', { kpi: { ...slice(r).kpi, jobs: 3 } })]);
   return v;
 }

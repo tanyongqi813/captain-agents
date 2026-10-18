@@ -115,7 +115,7 @@ test('看板上群的卡取自群记录：用群的现名、带“群聊”标�
 test('只有群在排队的项目也算一个项目：另一个项目有普通的活时，两边的卡都带项目标签', async () => {
   const v = chatView({ project: 'other', title: '新开的群', members: [{ who: 'codex', readOnly: false, job: null, state: 'queued' }], messages: [] });
   v.jobs = v.jobs.filter(j => j.id === 'solo');
-  v.projects = [{ name: 'xa', label: '派活工作台', archived: false }, { name: 'other', label: '另一个项目', archived: false }];
+  v.projects = [{ name: 'xa', label: '派活工作台', archived: false, repo: null, config: null }, { name: 'other', label: '另一个项目', archived: false, repo: null, config: null }];
   mount(v, 'board');
   const running = (await screen.findByTestId('running')).closest('.column') as HTMLElement;
   expect(within(running.querySelector('[data-chat="c1"]') as HTMLElement).getByText('另一个项目')).toBeTruthy();
@@ -241,7 +241,7 @@ test('停下要二次确认；收起的群只能看记录；没有群时一句�
   expect(await screen.findByRole('dialog', { name: '新建群聊' })).toBeTruthy();
 });
 test('新建群聊：选项目、拉人、设只读，交给 chatCreate；建好后打开新群', async () => {
-  const v = view(); v.chats = []; v.projects = [{ name: 'xa', label: '派活工作台', archived: false }];
+  const v = view(); v.chats = []; v.projects = [{ name: 'xa', label: '派活工作台', archived: false, repo: null, config: null }];
   mount(v);
   fireEvent.click(await screen.findByRole('button', { name: '新建群聊' }));
   const dialog = await screen.findByRole('dialog', { name: '新建群聊' });
@@ -256,7 +256,7 @@ test('新建群聊：选项目、拉人、设只读，交给 chatCreate；建好
   expect(localStorage.getItem('xa.chat-selected')).toBe('test-chat');
 });
 test('新建群聊不列出关掉的选手，名单里没有的也不出现', async () => {
-  const v = view(); v.chats = []; v.projects = [{ name: 'xa', label: '派活工作台', archived: false }];
+  const v = view(); v.chats = []; v.projects = [{ name: 'xa', label: '派活工作台', archived: false, repo: null, config: null }];
   v.settings.workers['cursor-opus'].enabled = false;
   v.roster = v.roster.filter(r => r.who !== 'cursor-sonnet');
   mount(v);

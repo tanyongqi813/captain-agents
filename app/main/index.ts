@@ -3,7 +3,7 @@ import { modelsRefresher, modelsRefreshHandler, modelsKeepHandler, modelsAddHand
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, nativeTheme, net, protocol, screen, session, shell } from 'electron';
 import { connect, connectArgument, connectStatus, disconnect } from '../../src/core/connect.ts';
 import { INTRO_TEXT } from '../../src/core/intro.ts';
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { desktopPath, paths } from '../../src/core/paths.ts';
@@ -41,10 +41,10 @@ import { desktopUpdater } from './update-runtime.ts';
 import { cliLauncherStatus, installCliLauncher, refreshCliLauncher } from './cli-launcher.ts';
 import { updateActions } from './updater.ts';
 import type { Updater } from './updater.ts';
-import { addProject } from '../../src/core/project.ts';
+import { addProject, loadProject, updateProject, removeProject } from '../../src/core/project.ts';
 import { checkProject } from '../../src/core/project-check.ts';
 import { git } from '../../src/core/worktree.ts';
-import { projectActions, projectSelections } from './project-bridge.ts';
+import { projectActions, projectSelections, projectManageActions } from './project-bridge.ts';
 import { planDispatch } from '../../src/core/plan-dispatch.ts';
 import { resolveTaskSpec } from '../../src/core/task-plan.ts';
 
@@ -279,6 +279,29 @@ else {
       updated: async () => { publish(await readDesktopView()); },
       onError: console.error,
     }, { selections: projectTokens });
+    // 项目管理（docs/tasks/TASK-003.md）：打开仓库、编辑登记、快速/完整体检、移除登记。
+    // 全部按登记项目名由后台解析；完整体检由主进程等待核心跑完（核心原子写回 check/baseline），关设置窗口不取消。
+    let choosingRules = false;
+    const manage = projectManageActions({
+      loadProject,
+      updateProject, removeProject,
+      checkProject: (name, options) => checkProject(name, options),
+      openPath: path => shell.openPath(path),
+      chooseFile: async () => {
+        if (choosingRules) throw new Error('正在选择文件，请稍等。');
+        choosingRules = true;
+        try {
+          const parent = window && !window.isDestroyed() ? window : null;
+          const options: Electron.OpenDialogOptions = { properties: ['openFile'], title: '选择规则文件' };
+          const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+          return result.canceled ? null : result.filePaths[0] ?? null;
+        } finally { choosingRules = false; }
+      },
+      realpath,
+      isFile: async path => (await stat(path)).isFile(),
+      updated: async () => { publish(await readDesktopView()); },
+      onError: console.error,
+    });
     updater = await desktopUpdater({
       development: __XA_DEVELOPMENT__, packaged: app.isPackaged,
       feed: __XA_UPDATE_FEED__, publicKey: __XA_UPDATE_PUBLIC_KEY__, hosts: __XA_UPDATE_HOSTS__,
@@ -342,6 +365,12 @@ else {
     // 项目登记（docs/tasks/TASK-001.md）：选择不带参数；登记只认选择令牌和允许的字段，仓库路径进不来。
     ipcMain.handle(channels.projectChoose, (event, ...args: unknown[]) => { guard(event); return projects.choose(args, event.sender.id); });
     ipcMain.handle(channels.projectRegister, (event, ...args: unknown[]) => { guard(event); return projects.register(args, event.sender.id); });
+    // 项目管理（docs/tasks/TASK-003.md）：只收项目名和允许的字段；规则文件路径凭一次性令牌带回，窗口交不进绝对路径。
+    ipcMain.handle(channels.projectOpen, async (event, ...args: unknown[]) => { guard(event); await manage.open(args); });
+    ipcMain.handle(channels.projectUpdate, async (event, ...args: unknown[]) => { guard(event); await manage.update(args, event.sender.id); });
+    ipcMain.handle(channels.projectRemove, async (event, ...args: unknown[]) => { guard(event); await manage.remove(args); });
+    ipcMain.handle(channels.projectCheck, async (event, ...args: unknown[]) => { guard(event); return manage.check(args); });
+    ipcMain.handle(channels.projectChooseRules, async (event, ...args: unknown[]) => { guard(event); return manage.chooseRules(args, event.sender.id); });
     // 规划派发（docs/tasks/TASK-006.md）：核心重新读规划做权威校验后走现有派发流程；成功后发布新 View。
     const planBridge = planActions({ dispatch: input => planDispatch(input) });
     ipcMain.handle(channels.planDispatch, async (event, ...args: unknown[]) => {
