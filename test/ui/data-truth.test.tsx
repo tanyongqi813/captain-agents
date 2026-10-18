@@ -14,7 +14,7 @@ function show(v: View, bridge = {}) {
   window.xa = fixtureBridge({ getView: vi.fn(async () => v), ...bridge });
   return render(<App />);
 }
-const toStats = async () => { await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '4', metaKey: true }); await screen.findByRole('heading', { name: '表现', level: 1 }); };
+const toStats = async () => { await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '5', metaKey: true }); await screen.findByRole('heading', { name: '表现', level: 1 }); };
 const quotaView = (quotaAt: Date | null = OLD) => {
   const v = view();
   v.quotaAt = quotaAt?.toISOString() ?? null;
@@ -34,11 +34,12 @@ test('顶栏额度：整块悬停按家写各池百分比和数据时间（本�
   expect(tip[1].split('\n').slice(0, 4)).toEqual(['Cursor（Ultra）', '总额度：10%', '自家模型池：12%', '其他模型池：23%']);
   expect(tip[1]).toMatch(/\n数据时间 \d\d-\d\d \d\d:\d\d$/);
   expect(tip[2]).toBe('Grok\n本期额度：5%\n这次没查到，上面是上一次的数据\n数据时间 01-02 03:04');
-  expect(tip[3]).toBe('隔离正常\n自检通过');
+  expect(tip[3]).toBe('Kimi Code\n已接入，暂无可查询额度');
+  expect(tip[4]).toBe('隔离正常\n自检通过');
   const ring = (name: string) => within(status).getByRole('img', { name: new RegExp('^' + name) });
   expect(ring('Codex').getAttribute('data-used')).toBe('63');
   expect(ring('Cursor').getAttribute('data-used')).toBe('23');
-  expect(ring('Cursor').getAttribute('aria-label')).toBe('Cursor：其他模型池 23%');
+  expect(ring('Cursor').getAttribute('aria-label')).toBe('Cursor：其他模型池已用 23%');
   expect(status.textContent).toBe('63%23%5%'); // 环旁只写百分比，不写池名（要求加百分比）
 });
 test('各家表现的额度卡：写数据时间；超过 30 分钟用提醒色；这次没查到写明', async () => {
@@ -96,7 +97,7 @@ test('历史里一批的“合格 x/y”：分母只算有验收记录的', asyn
   const v = view();
   v.jobs = [job('a', { batch: 'b', check: { ok: true, label: '通过', note: '' } }), job('b', { batch: 'b', who: 'grok' }), job('c', { batch: 'b', who: 'cursor-grok' })];
   v.batches = [{ id: 'b', title: '一批', summary: '', kind: '实现', base: '', started: v.jobs[0].started, jobs: ['a', 'b', 'c'] }];
-  show(v); await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '3', metaKey: true });
+  show(v); await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '4', metaKey: true });
   expect((await screen.findByText(/^合格 \d/)).textContent).toBe('合格 1/1');
 });
 test('在跑的卡片：样本不够（核心没给通常用时）只显示已用时；给了才显示“通常 X”；用时不含休眠', async () => {

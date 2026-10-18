@@ -1,6 +1,8 @@
 import type { View } from '../../src/core/view-types.ts';
+import type { ProjectCheck } from '../../src/core/project-check.ts';
 import type { WorkersPolicy } from '../../src/core/policy.ts';
 import type { Appearance, Limits, Storage } from '../../src/core/settings.ts';
+import type { DeepseekEndpoint } from '../../src/core/deepseek-settings.ts';
 import type { ConnectAi, ConnectStatus } from '../../src/core/intro.ts';
 import type { Effort } from '../../src/core/roster.ts';
 
@@ -10,10 +12,13 @@ export const channels = {
   appInfo: 'xa:app-info', onUpdate: 'xa:update', updateCheck: 'xa:update-check',
   updateDownload: 'xa:update-download', updateRestart: 'xa:update-restart', setAutoUpdateCheck: 'xa:auto-update-check',
   getView: 'xa:get-view', view: 'xa:view', open: 'xa:open',
+  projectChoose: 'xa:project-choose', projectRegister: 'xa:project-register',
+  planDispatch: 'xa:plan-dispatch', planSpec: 'xa:plan-spec',
   decide: 'xa:decide', redo: 'xa:redo', stop: 'xa:stop', comment: 'xa:comment',
   teamSay: 'xa:team-say', teamStop: 'xa:team-stop',
   chatCreate: 'xa:chat-create', chatSay: 'xa:chat-say', chatStop: 'xa:chat-stop', chatRename: 'xa:chat-rename',
   settingsGet: 'xa:settings-get', settingsSet: 'xa:settings-set',
+  deepseekLogin: 'xa:deepseek-login', deepseekModels: 'xa:deepseek-models',
   quotaRefresh: 'xa:quota-refresh', copyIntro: 'xa:copy-intro',
   connectStatus: 'xa:connect-status', connect: 'xa:connect', disconnect: 'xa:disconnect',
   networkAllowed: 'xa:network-allowed',
@@ -33,8 +38,24 @@ export type Places = { app: string; data: string };
 export type AppInfo = { version: string; update: UpdateState; autoCheck: boolean };
 // team：通知点开时跳到小队。只把目标交给窗口，界面怎么打开由看板那件活接。
 export type Destination = { kind: 'job' | 'batch' | 'team' | 'chat'; id: string } | { kind: 'settings' };
+// 项目登记（docs/tasks/TASK-001.md）：repo 只给主人看；窗口登记时只能交回 selectionId，交不进任何仓库路径。
+// name、label 是后台按仓库文件夹名给出的建议；null 表示没法安全生成，界面要主人自己填。
+export type ProjectChoice = { selectionId: string; repo: string; name: string | null; label: string | null };
+// 窗口只能交这两个字段。worktreeRoot、setup[]、verify[]、denyReadExtra[]、rules 含路径、命令或后续文件读取能力，
+// 不从这条桥接收；登记时由核心 addProject 用默认配置（见 docs/tasks/TASK-001.md 的设计和评审记录）。
+export type ProjectRegisterInput = { name: string; label?: string };
+// 只回传登记后的名字、显示名和仓库（仓库已由 projectChoose 展示过）；高级配置留给后续受控任务。
+export type RegisteredProject = { name: string; label: string; repo: string };
+// 规划派发（docs/tasks/TASK-006.md）：窗口只能交项目标识、Task ID、按“选手:强度[:fast]”写好的选择和只读开关。
+// 核心重新读规划文件做权威校验（只有真正可执行的 READY 任务能派发），再交给现有派发流程。
+export type PlanDispatchInput = { project: string; taskId: string; who: string[]; ro?: boolean };
+// 打开 Task Spec（docs/tasks/TASK-006.md）：窗口只交已登记项目名和 TASK-005 解析出来的仓库内相对路径
+// （docs/tasks/TASK-数字.md）；主进程按登记处的仓库重新解析，绝对路径、任意文件一律拒绝。
+export type PlanSpecInput = { project: string; spec: string };
+// check：快速体检的结构化结果；check 没跑成时是 null，原因在 checkError。体检失败不影响已完成的登记。
+export type ProjectRegistration = { project: RegisteredProject; check: ProjectCheck | null; checkError: string | null };
 export const defaultColumns = { running: '#2f6bd8', attention: '#64748b', done: '#2c8a55' };
-export type Settings = { keepAwake: boolean; notifications: boolean; appearance: Appearance; storage: Storage; limits: Limits; columns?: Record<string, string>; openAtLogin: boolean; workers: WorkersPolicy; networkAllowed: boolean };
+export type Settings = { keepAwake: boolean; notifications: boolean; appearance: Appearance; storage: Storage; limits: Limits; columns?: Record<string, string>; openAtLogin: boolean; workers: WorkersPolicy; networkAllowed: boolean; deepseek?: DeepseekEndpoint };
 // archivedProjects：整份归档名单替换。界面从 View.projects[].archived 算出名单再交过来，不从设置里读这份名单。
 // 联网的两项不走补丁，只能用下面专门的两个函数。
 export type SettingsPatch = Partial<Omit<Settings, 'workers' | 'networkAllowed'>> & { workers?: WorkersPolicy; archivedProjects?: string[] };
@@ -70,6 +91,9 @@ export type XaBridge = {
   chatRename(id: string, title: string): Promise<void>;
   getSettings(): Promise<Settings>;
   setSettings(patch: SettingsPatch): Promise<Settings>;
+  // 只把主人新输入的 DeepSeek 密钥交给核心凭据库；不提供读回。
+  deepseekLogin(key: string): Promise<void>;
+  deepseekModels(endpoint: DeepseekEndpoint, key?: string): Promise<string[]>;
   // 选手联网（docs/design-network.md）：只有总开关，返回整份新设置；核心校验，不合格报中文原因。
   setNetworkAllowed(on: boolean): Promise<Settings>;
   onOpen(callback: (destination: Destination) => void): () => void;
@@ -89,4 +113,13 @@ export type XaBridge = {
   modelsAdd(channel: string, model: string, efforts: Effort[]): Promise<void>;
   getView(): Promise<View>;
   onView(callback: (view: View) => void): () => void;
+  // 项目登记（docs/tasks/TASK-001.md）：原生目录选择，取消返回 null；只返回展示数据和一次性令牌。
+  projectChoose(): Promise<ProjectChoice | null>;
+  // 只认本窗口、仍有效、没用过的令牌；仓库路径只来自后台记住的那次选择。成功后发布新 View。
+  projectRegister(selectionId: string, input: ProjectRegisterInput): Promise<ProjectRegistration>;
+  // 规划派发（docs/tasks/TASK-006.md）：返回新任务号；失败给后台的中文原因。成功后发布新 View。
+  planDispatch(input: PlanDispatchInput): Promise<string[]>;
+  // 打开 Task Spec（docs/tasks/TASK-006.md）：只交项目名和仓库内相对路径，主进程解析出真实文件再打开；
+  // 路径不合法或仓库里没有就报中文原因。窗口没有打开任意文件的入口。
+  planOpenSpec(input: PlanSpecInput): Promise<void>;
 };

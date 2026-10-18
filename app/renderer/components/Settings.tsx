@@ -5,6 +5,7 @@ import { errorReason } from '../lib/errors.ts';
 import { SLIM_CHOICES, SLIM_NOTE, storageLine } from '../lib/storage.ts';
 import { RUN_CHOICES, STOP_CHOICES } from '../lib/limits.ts';
 import { IntroPane } from './IntroPane.tsx';
+import { ProjectSettings } from './ProjectSettings.tsx';
 import { defaultColumns } from '../../shared/ipc.ts';
 import type { Settings as Values, SettingsPatch } from '../../shared/ipc.ts';
 import { Button, ColorField, Modal, Segmented, Select, SettingGroup, SettingRow, SideNavLayout, Switch } from '../ui/index.ts';
@@ -26,10 +27,10 @@ const rememberPage = (id: string) => { try { window.localStorage.setItem(PAGE_KE
 const APPEARANCES: { id: Values['appearance']; label: string }[] = [{ id: 'system', label: '跟随系统' }, { id: 'light', label: '浅色' }, { id: 'dark', label: '深色' }];
 
 // view 里有“选手名单”和展示信息（看板数据），有了才显示“选手与模型”页；设置本身仍单独读、单独存。
-export function Settings({ close, view }: { close(): void; view?: Pick<View, 'roster' | 'workers' | 'quota' | 'storage' | 'projects' | 'models' | 'unlisted'> & Partial<Pick<View, 'selfcheck'>> }) {
+export function Settings({ close, view, notify }: { close(): void; view?: Pick<View, 'roster' | 'workers' | 'quota' | 'storage' | 'projects' | 'models' | 'unlisted'> & Partial<Pick<View, 'selfcheck'>>; notify?(text: string): void }) {
   const [values, setValues] = useState<Values | null>(null), [error, setError] = useState(''), [workersError, setWorkersError] = useState('');
   const latest = useRef<Values | null>(null), saved = useRef<Values | null>(null), queued = useRef<SettingsPatch | null>(null);
-  const saving = useRef(false), mounted = useRef(true), [remembered, setRemembered] = useState(readPage);
+  const saving = useRef<Promise<boolean> | null>(null), mounted = useRef(true), [remembered, setRemembered] = useState(readPage);
   const show = (next: Values | null) => { latest.current = next; if (mounted.current) setValues(next); };
   useEffect(() => {
     mounted.current = true;
@@ -39,27 +40,34 @@ export function Settings({ close, view }: { close(): void; view?: Pick<View, 'ro
   // 界面先显示新值，不禁用整组；同一时间只发一次保存，保存中来的改动记下来，存完再把最新的一起存上。
   // 失败：全部退回上次存下的值；原因写在出问题的那一块（选手的写在“选手与模型”顶部，其余写在最上面）。
   const save = async (patch: SettingsPatch) => {
-    if (!latest.current) return;
+    if (!latest.current) return false;
     show(apply(latest.current, patch));
     queued.current = combine(queued.current, patch);
-    if (saving.current) return;
-    saving.current = true; setError(''); setWorkersError('');
-    let sending: SettingsPatch = {};
-    try {
-      while (queued.current) {
-        sending = queued.current;
-        queued.current = null;
-        saved.current = await window.xa.setSettings(sending);
+    if (saving.current) return saving.current;
+    setError(''); setWorkersError('');
+    const task = (async () => {
+      let sending: SettingsPatch = {};
+      try {
+        while (queued.current) {
+          sending = queued.current;
+          queued.current = null;
+          saved.current = await window.xa.setSettings(sending);
+        }
+        show(saved.current);
+        return true;
+      } catch (e) {
+        const lost = { ...sending, ...queued.current }, reason = errorReason(e);
+        queued.current = null; show(saved.current);
+        if (mounted.current) {
+          if (Object.keys(lost).some(key => key !== 'workers')) setError('保存失败：' + reason);
+          if (lost.workers) setWorkersError('没能保存：' + reason);
+        }
+        return false;
       }
-      show(saved.current);
-    } catch (e) {
-      const lost = { ...sending, ...queued.current }, reason = errorReason(e);
-      queued.current = null; show(saved.current);
-      if (mounted.current) {
-        if (Object.keys(lost).some(key => key !== 'workers')) setError('保存失败：' + reason);
-        if (lost.workers) setWorkersError('没能保存：' + reason);
-      }
-    } finally { saving.current = false; }
+    })();
+    saving.current = task;
+    try { return await task; }
+    finally { if (saving.current === task) saving.current = null; }
   };
   // 旧设置里可能还留着已经没有的列（如以前的“排队”）：读的时候忽略，存的时候只带现有的三列。
   const known = (columns?: Record<string, string>) => Object.fromEntries(Object.entries(columns ?? {}).filter(([name]) => Object.hasOwn(defaultColumns, name)));
@@ -93,7 +101,7 @@ export function Settings({ close, view }: { close(): void; view?: Pick<View, 'ro
       if (mounted.current) setError('没能保存：' + errorReason(e));
     } finally { if (mounted.current) setNetworkSaving(false); }
   };
-  const pages = [{ id: 'general', label: '通用' }, ...(view ? [{ id: 'workers', label: '选手与模型' }] : []), { id: 'network', label: '联网' }, { id: 'colors', label: '看板颜色' }, { id: 'intro', label: '接入 AI' }];
+  const pages = [{ id: 'general', label: '通用' }, ...(view ? [{ id: 'projects', label: '项目' }, { id: 'workers', label: '选手与模型' }] : []), { id: 'network', label: '联网' }, { id: 'colors', label: '看板颜色' }, { id: 'intro', label: '接入 AI' }];
   const page = pages.find(p => p.id === remembered)?.id ?? 'general';
   return <Modal size="lg" flush label="设置" title="设置" onClose={close}>
     <SideNavLayout label="设置分页" items={pages} value={page} onChange={id => { setRemembered(id); rememberPage(id); }}>
@@ -121,8 +129,14 @@ export function Settings({ close, view }: { close(): void; view?: Pick<View, 'ro
             <SettingRow title="额度停派线" note={values.limits.quotaStop === null ? '不按用量停派；额度用尽的那家仍然派不出去' : '某家用到这里就不再派给它'}><Select label="额度停派线" items={STOP_CHOICES.map(n => ({ id: String(n), label: n === null ? '不设限' : n + '%' }))} value={String(values.limits.quotaStop)}
               onChange={id => { const stop = STOP_CHOICES.find(n => String(n) === id); if (stop !== undefined) limits({ quotaStop: stop }); }} /></SettingRow>
           </SettingGroup>
-          <WorkerSettings view={view} values={values.workers} error={workersError} change={worker} />
+          <WorkerSettings view={view} values={values.workers} deepseek={values.deepseek} error={workersError} change={worker}
+            configureDeepseek={async (deepseek, key) => {
+              if (!await save({ deepseek })) return false;
+              if (key) await window.xa.deepseekLogin(key);
+              return true;
+            }} />
         </>}
+        {page === 'projects' && view && <ProjectSettings projects={view.projects} notify={text => notify?.(text)} />}
         {page === 'network' && <NetworkSettings allowed={values.networkAllowed} saving={networkSaving} setAllowed={on => void allowNetwork(on)} />}
         {page === 'intro' && <IntroPane />}
         {page === 'colors' && <>

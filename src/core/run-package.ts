@@ -10,7 +10,7 @@ import type { Command, Job } from './job.ts';
 import { jobDir, toolRoot } from './paths.ts';
 import { relativePath } from './project.ts';
 import { isolationOf } from './roster.ts';
-import { codexPermissions, sandbox } from './sandbox.ts';
+import { codexPermissions, cursorPersistPaths, sandbox } from './sandbox.ts';
 import type { Isolated } from './sandbox.ts';
 import { command, resumeCommand } from './workers.ts';
 
@@ -83,7 +83,9 @@ async function generatedPolicy(job: Job, isolated: Isolation): Promise<Policy> {
     ? codexPolicy(codexPermissions(job, isolated, undefined, job.network === true))
     : srtPolicy(await sandbox(job, isolated, undefined, undefined, job.network === true));
 }
-function noWeaker(old: Policy, next: Policy) {
+// 共享续接目录不是通用可写项。只有调用方传入、并且已经过 cursorPersistPaths 校验的那几条路径可以比上一轮多。
+function noWeaker(old: Policy, next: Policy, persist: readonly string[] = []) {
+  for (const path of persist) if (path === '/tmp' || path === '/private/tmp' || path === '/private/var/folders') return fail('不能放开公用临时目录。');
   if (old.kind === 'codex' && next.kind === 'codex') {
     if (old.base !== next.base || old.network !== next.network) return fail('Codex 只读模式或联网权限发生变化。');
     const rank = { write: 0, read: 1, deny: 2 };
@@ -98,7 +100,8 @@ function noWeaker(old: Policy, next: Policy) {
   } else if (old.kind === 'srt' && next.kind === 'srt') {
     for (const key of ['denyRead', 'denyWrite'] as const)
       if (old[key].some(path => !next[key].includes(path))) return fail(`srt 的 ${key} 少了旧条目。`);
-    if (next.allowWrite.some(path => !old.allowWrite.includes(path))) return fail('srt 新增了可写位置。');
+    const added = next.allowWrite.filter(path => !old.allowWrite.includes(path));
+    if (added.some(path => !persist.includes(path)) || persist.some(path => !next.allowWrite.includes(path))) return fail('srt 新增了可写位置。');
     if (!isDeepStrictEqual(old.network, next.network)) return fail('srt 网络规则发生变化。');
   } else return fail('隔离类型发生变化。');
 }
@@ -150,10 +153,13 @@ export async function prepareRun(job: Job, text: string, project: Isolated, resu
       isolation.denyReadHome = unique(isolation.denyReadHome);
     }
     const settings = isolationOf(job.who) === 'codex' ? undefined : await sandbox(job, isolation, undefined, undefined, job.network === true);
+    // ADR-002：只给 macOS 上、带群标记的 Cursor 续接轮加上共享锁目录。首轮、普通派活和非群聊任务走上面的通用沙箱，拿不到它。
+    const persist = resume && isolationOf(job.who) === 'cursor' && !!job.chat?.id && process.platform === 'darwin' ? await cursorPersistPaths() : [];
+    if (settings && persist.length) for (const path of persist) if (!settings.filesystem.allowWrite.includes(path)) settings.filesystem.allowWrite.push(path);
     if (settings) await writeJson(join(dir, 'sandbox.json'), settings);
     const fresh = await command(job, text, isolation, dir);
     if (previous) {
-      noWeaker(previous, settings ? srtPolicy(settings) : commandPolicy(fresh));
+      noWeaker(previous, settings ? srtPolicy(settings) : commandPolicy(fresh), persist);
       checkEnvironment(job.command!, fresh);
     }
     const actual = resume ? resumeCommand({ ...job, command: fresh, resume }) : fresh;

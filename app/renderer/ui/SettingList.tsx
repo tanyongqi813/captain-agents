@@ -7,7 +7,7 @@ export function SettingGroup({ label, head, className, children }: { label?: str
 // 一行 = 左边标题（需要时下面一行小字说明）+ 右边控件。整行是一个 label：点标题也能操作里面的开关或取色框。
 // group：右边是一组按钮（如分段切换）时传 true——整行不再是 label（否则点标题会点到第一个按钮），改成带名字的 group。
 // icon：标题前的小图标（接入 AI 的各家图标）；dim：整行变淡（接入 AI 里“没装”的那家）。
-export function SettingRow({ title, note, group = false, icon, dim = false, children }: { title: string; note?: string; group?: boolean; icon?: ReactNode; dim?: boolean; children: ReactNode }) {
+export function SettingRow({ title, note, group = false, icon, dim = false, children }: { title: string; note?: ReactNode; group?: boolean; icon?: ReactNode; dim?: boolean; children: ReactNode }) {
   const copy = <span className="setting-copy"><span className="setting-title">{title}</span>{note && <small className="setting-note">{note}</small>}</span>;
   const head = icon ? <span className="setting-lead">{icon}{copy}</span> : copy;
   const cls = 'setting-row' + (dim ? ' setting-row-dim' : '');

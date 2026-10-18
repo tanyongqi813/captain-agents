@@ -49,12 +49,20 @@ export type Job = {
   };
   activity?: Activity[]; lastActivityAt?: string; changedFiles?: number;
   timing?: Timing;
+  // 收尾原因（docs/tasks/TASK-008.md）：manual 手动停、stalled 停滞、timed_out 单次总超时、process_error 看管进程异常。
+  // 旧记录没有这一字段，读取照常兼容，公开视图里显示成 null。
+  termination?: 'manual' | 'stalled' | 'timed_out' | 'process_error';
+  // 停滞预警快照：达到停滞门槛时写一次；宽限期内有新活动或日志增长就删掉；宽限结束仍未恢复才停止。有界收尾的证据之一。
+  stallWarning?: { at: string; signalAt: string; logBytes: number };
   // 派活时的联网快照；缺省就是关，之后的设置变更不影响本任务。
   network?: true;
   // 自动清理旧日志后记下：什么时候、腾出多少字节、移走了哪些文件（相对任务目录）。
   slimmed?: { at: string; bytes: number; files: string[] };
   // 小队里的队员（docs/design-team.md）。有它的活由小队推进，看板画在小队卡里，不单独成卡。
   team?: { id: string; role: 'writer' | 'reviewer' };
+  // 任务台账追溯（docs/tasks/TASK-006.md）：从项目规划（docs/TASK_LIST.md）派发的活记下 Task ID 和 Task Spec
+  // 的仓库内相对路径；旧记录没有这一字段，读取照常兼容。
+  plan?: { taskId: string; spec: string };
   // 项目群里的成员（docs/design-team.md 第 16 节）：这件活是某位选手在这个群里的“席位”，每被 @ 一次就续接一轮；
   // 副本是群共用的，清理这件活时不删副本（群收起后由 xagents chat clean 删）。
   chat?: { id: string };
@@ -126,7 +134,11 @@ export async function reconcile(job: Job) {
   if (!interruption(job)) return job;
   return updateJob(job.id, current => {
     const interrupted = interruption(current);
-    if (interrupted) finish(current, interrupted.state, interrupted.error);
+    if (interrupted) {
+      // 主人 stop 之后看管/派发进程已经不在、由这里修正成 stopped 的，同样是手动停止：补上结构化终止原因（不覆盖已写下的）。
+      if (interrupted.state === 'stopped') current.termination ??= 'manual';
+      finish(current, interrupted.state, interrupted.error);
+    }
   });
 }
 export async function listJobs(fixLost = false): Promise<Job[]> {

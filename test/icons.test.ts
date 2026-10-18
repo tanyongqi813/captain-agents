@@ -7,7 +7,7 @@ import { iconSources, installIcons, migrateIcons, windowsIconSources } from '../
 
 test('图标用替身应用和 sips 按需导出；缺失跳过，失败不留半份，下次能重试', { skip: process.platform === 'win32' ? '只属于 macOS：从 .app 用 sips 导出图标' : false }, async t => {
   const c = await context(t), apps = join(c.temp, 'Applications'), icons = join(c.home, 'icons');
-  for (const key of ['codex', 'grok', 'cursor'] as const) {
+  for (const key of ['codex', 'grok', 'cursor', 'kimi'] as const) {
     const source = join(apps, iconSources[key]); await mkdir(dirname(source), { recursive: true }); await writeFile(source, key);
   }
   const sips = join(c.temp, 'fake-sips');
@@ -16,13 +16,14 @@ test('图标用替身应用和 sips 按需导出；缺失跳过，失败不留�
   await installIcons(icons, apps, sips);
   assert.equal(await readFile(join(icons, 'codex.png'), 'utf8'), 'codex');
   assert.equal(await readFile(join(icons, 'grok.png'), 'utf8'), 'grok');
+  assert.equal(await readFile(join(icons, 'kimi.png'), 'utf8'), 'kimi');
   await assert.rejects(access(join(icons, 'claude.png')));
   await assert.rejects(access(join(icons, 'cursor.png')));
   const stamp = await stat(join(icons, 'codex.png'));
   await installIcons(icons, apps, sips);
   assert.equal((await stat(join(icons, 'codex.png'))).ino, stamp.ino);
   const calls = (await readFile(capture, 'utf8')).trim().split('\n').map(s => JSON.parse(s));
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   assert.deepEqual(calls[0].slice(0, 5), ['-s', 'format', 'png', '-Z', '96']);
   assert.equal(calls[0][6], '--out');
   await writeFile(sips, `#!${process.execPath}\nconst fs = require('node:fs'); const a = process.argv.slice(2); fs.copyFileSync(a[5],a[7]);\n`, { mode: 0o700 });

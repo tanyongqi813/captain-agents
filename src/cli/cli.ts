@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureHome } from '../core/paths.ts';
 import { hasCode } from '../core/fsx.ts';
 import { addProject, listProjects, loadProject, setArchived, setProjectLabel } from '../core/project.ts';
+import { parseBudget } from '../core/budget.ts';
 import { checkProject } from '../core/project-check.ts';
 import { formatCheck } from './check.ts';
 import { dispatch } from '../core/dispatch.ts';
@@ -43,10 +44,11 @@ const help = () => `派活工作台：登记、派发和收集本机助手的任
   xagents intro   # 打印给其他 AI 的对接提示词（贴进它的对话，它就知道先读手册）
   xagents connect   # 看各家 AI 的接入状态
   xagents connect <claude|codex|grok|cursor|dsh> [--undo]   # 接入；--undo 撤下（dsh 是 DeepSeek Harness）
-  xagents login deepseek   # 主人自己登录 DeepSeek：按提示粘贴 API 钥匙（屏幕上不显示），由 Codex 单独保管，不影响 ChatGPT 登录
+  xagents login deepseek   # 粘贴官方或中转站 API 钥匙（屏幕上不显示）；中转参数先在应用的“设置 → DeepSeek”填写
   xagents guide
     打印指挥手册全文，末尾附这台机器现在的情况（选手设置、额度、各家档案、手头的活）。来指挥的 AI 第一步先运行它
-  xagents project add <名字> <仓库路径> [--label 显示名] [--worktree-root 相对路径] [--setup 命令] [--verify 命令] [--deny-read 路径] [--rules 文件]
+  xagents project add <名字> <仓库路径> [--label 显示名] [--worktree-root 相对路径] [--setup 命令] [--verify 命令] [--deny-read 路径] [--rules 文件] [--budget 停滞,宽限,总上限]
+    # --budget 是每件活的执行预算（分钟）：停滞多久无动静先预警、预警后宽限多久、单次总时限硬上限；缺省 20,5,120
   xagents project label <名字> <显示名>   # 只改应用里显示的项目名
   xagents project archive|unarchive <名字>   # 归档后看板已完成列和历史页“全部”不显示，记录和打分都留着；归档的项目不能派活
   xagents project list
@@ -172,7 +174,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       arity(rest, 1);
       if (rest[0] !== 'deepseek') throw new Error('目前只有 DeepSeek 需要这样登录：xagents login deepseek。其他几家用它们自己的程序登录。');
       const { loginDeepseek } = await import('../core/workers.ts');
-      await loginDeepseek(await readSecret('请粘贴 DeepSeek 的 API 钥匙（屏幕上不显示），然后按回车：'));
+      await loginDeepseek(await readSecret('请粘贴 DeepSeek 官方或中转站的 API 钥匙（屏幕上不显示），然后按回车：'));
       console.log('DeepSeek 已登录。钥匙由 Codex 存在派活工作台单独的文件夹里，你自己的 ChatGPT 登录不受影响。');
       return 0;
     }
@@ -299,9 +301,10 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         arity(rest, 3); console.log(`已把 ${rest[1]} 的显示名改成：${await setProjectLabel(rest[1], rest[2])}`); return 0;
       }
       if (rest[0] !== 'add') throw new Error('项目命令只支持 add、list、check、label、archive 和 unarchive，请运行 xagents --help。');
-      const p = parse(rest.slice(1), ['label', 'worktree-root', 'setup', 'verify', 'deny-read', 'rules'], [], ['setup', 'verify', 'deny-read']);
+      const p = parse(rest.slice(1), ['label', 'worktree-root', 'setup', 'verify', 'deny-read', 'rules', 'budget'], [], ['setup', 'verify', 'deny-read']);
       arity(p.positional, 2);
-      const project = await addProject(p.positional[0], p.positional[1], { worktreeRoot: p.one('worktree-root'), setup: p.options.setup, verify: p.options.verify, denyReadExtra: p.options['deny-read'], rules: p.one('rules'), label: p.one('label') });
+      const budget = p.one('budget');
+      const project = await addProject(p.positional[0], p.positional[1], { worktreeRoot: p.one('worktree-root'), setup: p.options.setup, verify: p.options.verify, denyReadExtra: p.options['deny-read'], rules: p.one('rules'), label: p.one('label'), budget: budget === undefined ? undefined : parseBudget(budget) });
       console.log(`已登记项目 ${project.name}：${project.repo}`);
       // 登记成功后顺手做一次快速体检；完整体检要装依赖、跑测试，另外运行。
       try { console.log(`\n接入体检（快速）：\n${formatCheck(await checkProject(project.name, { quick: true }))}\n完整体检会装依赖、跑验收，比较久，需要时另外运行：xagents project check ${project.name}`); }

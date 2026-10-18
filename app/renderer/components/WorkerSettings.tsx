@@ -1,11 +1,13 @@
 import type { View } from '../../../src/core/view-types.ts';
 import type { Settings as Values } from '../../shared/ipc.ts';
+import type { DeepseekEndpoint } from '../../../src/core/deepseek-settings.ts';
 import { effortText } from '../lib/board.ts';
 import { useState } from 'react';
 import { Button, CheckDot, Chip, SettingGroup, Switch, WorkerIcon } from '../ui/index.ts';
 import { ModelPicker } from './ModelPicker.tsx';
 import { quotaTip, topBar } from '../lib/quota.ts';
 import type { Quota } from '../lib/quota.ts';
+import { DeepseekSettings } from './DeepseekSettings.tsx';
 
 type Roster = View['roster'][number];
 type Policy = Values['workers'][Roster['who']];
@@ -33,9 +35,10 @@ const quotaLine = (q: Quota | undefined) => {
 
 // 设置里的“选手与模型”：按厂家分组（Codex、Grok、Cursor、DeepSeek），组内是一张对齐的表，一行一个模型：
 // 模型 | 中档 | 高档 | 超高档 | 快速版 | 启用。关掉的模型整行变淡，强度和快速版点不动但保留原值。改动交给 change，由设置页统一排队保存。
-export function WorkerSettings({ view, values, error, change }: {
+export function WorkerSettings({ view, values, deepseek, error, change, configureDeepseek }: {
   view: Pick<View, 'roster' | 'workers' | 'quota' | 'models' | 'unlisted'>; values: Values['workers'] | undefined; error: string;
-  change: (who: Roster['who'], patch: Change) => void;
+  deepseek?: DeepseekEndpoint; change: (who: Roster['who'], patch: Change) => void;
+  configureDeepseek: (value: DeepseekEndpoint, key: string) => Promise<boolean>;
 }) {
   const rows = view.roster.map(entry => ({ entry, policy: policyOf(entry, values) }));
   const enabled = rows.filter(r => r.policy.enabled).length;
@@ -48,6 +51,7 @@ export function WorkerSettings({ view, values, error, change }: {
   }
   // 管理模型：每家组头右边的按钮；有新发现的模型时按钮里带“新 N”。已下线的模型在表里那一行标出来。
   const [picking, setPicking] = useState<string | null>(null);
+  const [editingDeepseek, setEditingDeepseek] = useState(false);
   const channels = view.models?.channels ?? [], channelOf = (icon: string) => channels.find(c => c.icon === icon);
   const gone = new Set(channels.flatMap(c => c.models.filter(m => m.gone && m.kept).map(m => m.who)));
   const fresh = channels.reduce((n, c) => n + c.models.filter(m => m.fresh).length, 0);
@@ -62,11 +66,12 @@ export function WorkerSettings({ view, values, error, change }: {
       return <SettingGroup key={group.icon} label={group.name} head={<>
         <WorkerIcon name={group.icon} size="sm" /><span>{group.name}</span>
         <span className="wk-quota ellip" title={quota ? quotaTip(quota) : undefined}>{quotaLine(quota)}</span>
+        {group.icon === 'deepseek' && <Button size="sm" className="wk-edit" onClick={() => setEditingDeepseek(true)}>编辑</Button>}
         {channel && <Button size="sm" className="wk-manage" onClick={() => setPicking(channel.channel)}>管理模型{news > 0 && <span className="wk-new">新 {news}</span>}</Button>}
       </>}>{group.rows.map(({ entry, policy }) => {
         const { who } = entry, shown = view.workers[who], off = !policy.enabled, last = policy.enabled && enabled === 1, chosen = policy.efforts.length;
         return <div className="wk-row" role="group" aria-label={`${shown.name} · ${shown.model}`} data-who={who} data-off={off || undefined} key={who}>
-          <span className="wk-model" title={shown.model}>{shown.badge && <WorkerIcon name={shown.badge} size="sm" />}<span className="ellip">{shown.model}</span>{gone.has(who) && <Chip tone="warn" title="最近一次检查，这一家的名单里已经没有它；派活会被拦下">已下线</Chip>}</span>
+          <span className="wk-model" title={shown.model}><span className="ellip">{shown.model}</span>{gone.has(who) && <Chip tone="warn" title="最近一次检查，这一家的名单里已经没有它；派活会被拦下">已下线</Chip>}</span>
           {ORDER.map(effort => {
             if (!entry.efforts.includes(effort)) return <span key={effort} />;
             const on = policy.efforts.includes(effort);
@@ -81,5 +86,6 @@ export function WorkerSettings({ view, values, error, change }: {
     {/* 没列出来的厂家（这台电脑上没找到程序，或这种系统上平台还关不住它）：一行淡色小字写原因（docs/ui-spec.md 第 10 节）。 */}
     {view.unlisted.length > 0 && <p className="wk-unlisted">{view.unlisted.map(u => u.reason).join('；')}。</p>}
     {picked && <ModelPicker key={picked.channel} channel={picked} updated={view.models.at} close={() => setPicking(null)} />}
+    {editingDeepseek && <DeepseekSettings value={deepseek} close={() => setEditingDeepseek(false)} save={configureDeepseek} />}
   </div>;
 }

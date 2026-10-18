@@ -106,6 +106,33 @@ button, a, input, textarea, select, summary { -webkit-app-region: no-drag; }
 .hscore { font-variant-numeric: tabular-nums; }
 .hfoot { padding: 0 var(--sp-4) var(--sp-3); text-align: right; font-size: var(--fs-sm); color: var(--muted); }
 .hfoot button:hover { color: var(--text); }
+/* 规划页（docs/ui-spec.md 第 19 节）：任务列表行沿用历史页的 hgroup/hrow 分区，行内网格第一列留给任务号。 */
+.plan-sum { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; width: 100%; padding: var(--sp-3) var(--sp-4) var(--sp-1); border: 0; background: transparent; text-align: left; }
+.plan-sum:hover { background: var(--sunk); }
+.plan-sum .right { display: flex; gap: var(--sp-3); align-items: center; font-size: var(--fs-sm); color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
+.plan-id { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-meta { padding: 0 var(--sp-4) var(--sp-2); font-size: var(--fs-sm); }
+.plan-detail { border-top: 1px solid var(--line); background: var(--bg); padding: var(--sp-3) var(--sp-4); }
+.plan-detail > p { margin: 0 0 var(--sp-2); }
+.plan-accept { margin: 0 0 var(--sp-2); }
+.plan-accept .muted { display: block; margin-bottom: var(--sp-1); }
+.plan-accept p { margin: 0; }
+.plan-foot { margin-top: var(--sp-4); font-size: var(--fs-sm); }
+.plan-empty-note { text-align: center; margin-top: var(--sp-2); }
+/* 派发确认弹窗里的选手选择 */
+.plan-form > p { margin: 0 0 var(--sp-2); }
+.plan-form-title { font-weight: 600; }
+.plan-pick { margin: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.plan-pick-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); }
+.plan-pick-row.on { border-color: var(--accent); }
+.plan-pick-name { min-width: 0; overflow-wrap: anywhere; }
+.plan-pick-row .filters { margin-bottom: 0; }
+/* 读写权限：同样一开始一个都不选中，和强度一样是必选项 */
+.plan-permission { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.plan-permission .filters { margin-bottom: 0; }
+/* 展开详情里的按钮排：打开 Task Spec + 派发，左对齐 */
+.plan-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); }
+.plan-spec-path { margin: var(--sp-2) 0 0; font-size: var(--fs-sm); }
 .quota-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-6); }
 .qcard { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
 .qcard .bar-top { display: flex; justify-content: space-between; font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-2); }

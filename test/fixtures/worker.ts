@@ -107,6 +107,9 @@ if (mode === 'hang' || mode === 'ignore-term') {
     console.log(JSON.stringify({ sessionId: session }));
     console.log(JSON.stringify({ type: 'text', data: report }));
     console.log(JSON.stringify({ type: 'end', usage: { input_tokens: 40, cache_read_input_tokens: 60, output_tokens: 12 } }));
+  } else if (args.includes('cursor-agent')) {
+    console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: session }));
+    console.log(JSON.stringify({ type: 'result', result: report, session_id: session, usage: { inputTokens: 30, cacheReadTokens: 60, cacheWriteTokens: 10, outputTokens: 12 } }));
   } else console.log(JSON.stringify({ type: 'result', result: report, usage: { inputTokens: 30, cacheReadTokens: 60, cacheWriteTokens: 10, outputTokens: 12 } }));
   if (mode === 'fail') { console.error('模拟选手失败'); process.exitCode = 7; }
 }

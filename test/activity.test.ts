@@ -46,6 +46,19 @@ test('三份真实流式样本的动作、报告与用量', async () => {
   }
 });
 
+test('Kimi Code 流式输出：工具动作与最终报告', () => {
+  const raw = [
+    { role: 'meta', type: 'system.version', version: '2.1.1' },
+    { role: 'assistant', tool_calls: [{ type: 'function', id: 'tool_1', function: { name: 'Bash', arguments: JSON.stringify({ command: 'pwd' }) } }] },
+    { role: 'tool', tool_call_id: 'tool_1', content: '/tmp/sample-repo\n' },
+    { role: 'assistant', content: 'KIMI_TOOL_OK' },
+  ].map(line).join('');
+  const kimi = new StreamParser('kimi', '/tmp/sample-repo');
+  kimi.feed(raw, at); kimi.finish(at);
+  assert.deepEqual(kimi.result().activity.map(a => [a.kind, a.text]), [['cmd', 'pwd'], ['say', 'KIMI_TOOL_OK']]);
+  assert.equal(kimi.result().report, 'KIMI_TOOL_OK');
+});
+
 test('坏行与结构异常跳过；半行等待后续；动作只保留末尾 50 条和 200 字', () => {
   for (const who of ['codex', 'grok', 'cursor-opus'] as Who[]) {
     const p = new StreamParser(who);

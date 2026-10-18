@@ -245,13 +245,26 @@ test('新建群聊：选项目、拉人、设只读，交给 chatCreate；建好
   mount(v);
   fireEvent.click(await screen.findByRole('button', { name: '新建群聊' }));
   const dialog = await screen.findByRole('dialog', { name: '新建群聊' });
-  expect(within(dialog).queryByRole('checkbox', { name: /CursorClaude/ })).toBeNull();
+  expect(within(dialog).getByRole('checkbox', { name: '拉 CursorClaude 进群' })).toBeTruthy();
+  expect(within(dialog).getByRole('checkbox', { name: '拉 CursorGrok 进群' })).toBeTruthy();
+  expect(within(dialog).getByRole('checkbox', { name: '拉 CursorSonnet 进群' })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('checkbox', { name: '拉 Codex 进群' }));
   fireEvent.click(within(dialog).getByRole('checkbox', { name: '拉 DeepSeek 进群' }));
   fireEvent.click(within(dialog).getByRole('switch', { name: 'DeepSeek 只读' }));
   fireEvent.click(within(dialog).getByRole('button', { name: '建群' }));
   await waitFor(() => expect(window.xa.chatCreate).toHaveBeenCalledWith({ project: 'xa', title: undefined, members: ['codex:high', 'deepseek:high:ro'] }));
   expect(localStorage.getItem('xa.chat-selected')).toBe('test-chat');
+});
+test('新建群聊不列出关掉的选手，名单里没有的也不出现', async () => {
+  const v = view(); v.chats = []; v.projects = [{ name: 'xa', label: '派活工作台', archived: false }];
+  v.settings.workers['cursor-opus'].enabled = false;
+  v.roster = v.roster.filter(r => r.who !== 'cursor-sonnet');
+  mount(v);
+  fireEvent.click(await screen.findByRole('button', { name: '新建群聊' }));
+  const dialog = await screen.findByRole('dialog', { name: '新建群聊' });
+  expect(within(dialog).queryByRole('checkbox', { name: '拉 CursorClaude 进群' })).toBeNull();
+  expect(within(dialog).queryByRole('checkbox', { name: '拉 CursorSonnet 进群' })).toBeNull();
+  expect(within(dialog).getByRole('checkbox', { name: '拉 CursorGrok 进群' })).toBeTruthy();
 });
 const menuOf = async (title: string) => { fireEvent.click(screen.getByRole('button', { name: `更多操作：${title}` })); return screen.findByRole('menu', { name: `更多操作：${title}` }); };
 test('会话列表每行的“…”菜单：置顶、重命名、归档三项；没有一点就生效的归档按钮', async () => {

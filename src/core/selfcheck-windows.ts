@@ -57,7 +57,7 @@ export function windowsTempPaths(home = homedir(), env: NodeJS.ProcessEnv = proc
     'tmp-programdata': env.ProgramData || join(parse(home).root, 'ProgramData'), 'tmp-root': parse(home).root, 'npm-logs': join(local, 'npm-cache', '_logs'), 'own-install': own, 'own-program': program,
   };
 }
-const logins = ['login-codex', 'login-grok', 'login-cursor', 'login-deepseek'];
+const logins = ['login-codex', 'login-grok', 'login-cursor', 'login-kimi', 'login-deepseek'];
 const keychain = ['keychain', 'keychain-user', 'keychain-system'];
 export function windowsExpectedProbes() {
   return ['worktree', 'tmpdir', 'hardlink', 'home', 'account', 'chrome', 'listener', 'listen', 'pipe', 'internet', 'ssh', 'npmrc', 'shell-files', 'credential-files', 'env-secret',

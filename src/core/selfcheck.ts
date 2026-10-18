@@ -1,4 +1,5 @@
 import { nodeCommand, nodeInvocation, externalEnvironment } from './node-runtime.ts';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, rmdir, writeFile, realpath, lstat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +34,8 @@ export type IsolationResult = { isolation: Isolation; probes: Probe[]; error?: s
 // 7：2026-10-03 加常见登录凭据文件（~/.netrc、~/.git-credentials、~/.docker、~/.kube 等）的禁读探针；
 //    钥匙串和环境变量两条并行的修复合并，统一升到这一版（两边各自升过的 5、6 都作废重检）。
 // 8：2026-10-12 Windows 上加“改派活工作台自己的程序目录”的探针（安装时可以选位置了）。macOS 的探针没变，只是跟着重检一次。
-const cacheVersion = 8;
+// 9：2026-10-16 加 Kimi Code 隔离与登录探针。
+const cacheVersion = 9;
 // platform：在哪种系统上做的自检。旧的缓存没有这一项，都是 macOS 上做的。
 export type Selfcheck = { version: typeof cacheVersion; platform?: string; ok: boolean; at: string; note: string; results: IsolationResult[] };
 // 自检覆盖选手清单里出现的每一种隔离；新选手沿用已有隔离就自动被覆盖。
@@ -65,6 +67,9 @@ export const globalTargets: { name: string; path: string; dir: boolean; label: s
   { name: 'grok-install', path: '.grok/bin', dir: true, label: '改 Grok 程序' },
   { name: 'grok-sessions', path: '.grok/sessions', dir: true, label: '写 Grok 别处的会话记录' },
   { name: 'grok-login', path: '.grok/auth.json', dir: false, label: '改 Grok 登录文件' },
+  { name: 'kimi-config', path: '.kimi-code/config.toml', dir: false, label: '改 Kimi Code 配置' },
+  { name: 'kimi-login', path: '.kimi-code/credentials', dir: true, label: '改 Kimi Code 登录凭据' },
+  { name: 'kimi-sessions', path: '.kimi-code/sessions', dir: true, label: '写 Kimi Code 全局会话' },
   { name: 'claude-config', path: '.claude', dir: true, label: '写 Claude 的配置和钩子' },
   { name: 'agents-skills', path: '.agents', dir: true, label: '写公用技能目录' },
   { name: 'codex-config', path: '.codex', dir: true, label: '写 Codex 的配置' },
@@ -104,20 +109,26 @@ export function expectedProbes(mode: Isolation, windows = isWindows) {
   // Codex 的登录文件由它在隔离外的主进程读取，所以它的隔离里三家都必须读不到；
   // Grok、Cursor 整个跑在外层隔离里，必须能读自己的登录文件，只要求读不到别家的。
   // DeepSeek 的登录（API 钥匙）放在派活工作台单独的文件夹里，由 Codex 主进程在隔离外读，三种隔离都必须读不到。
-  const logins = [...(mode === 'codex' ? ['login-codex', 'login-grok', 'login-cursor'] : mode === 'grok' ? ['login-codex', 'login-cursor'] : ['login-codex', 'login-grok']), 'login-deepseek'];
+  const own = mode === 'grok' ? 'login-grok' : mode === 'cursor' ? 'login-cursor' : mode === 'kimi' ? 'login-kimi' : undefined;
+  const logins = [...['login-codex', 'login-grok', 'login-cursor', 'login-kimi'].filter(name => name !== own), 'login-deepseek'];
   return ['worktree', 'tmpdir', 'hardlink', 'home', 'chrome', 'listener', 'internet', 'ssh', 'npmrc', 'shell-files', 'credential-files', 'env-secret', ...logins, ...keychainProbes, ...globalTargets.map(t => t.name), ...tempTargets.map(t => t.name)];
 }
 // 这两项必须写得进去，其余一律要挡住。
 const mustAllow = ['worktree', 'tmpdir'];
 const macLabels: Record<string, string> = { ...Object.fromEntries([...globalTargets, ...tempTargets].map(t => [t.name, t.label])), worktree: '副本内写文件', tmpdir: '任务专用临时目录可写（TMPDIR 指向它）', hardlink: '借硬链接改外面的文件', home: '目录外写文件', chrome: 'Chrome 调试口', listener: '本机监听端口', internet: '外网', ssh: '读 SSH 文件名', npmrc: '读 npm 登录配置', 'login-codex': '读 Codex 登录文件', 'login-grok': '读 Grok 登录文件', 'login-cursor': '读 Cursor 登录文件', 'login-deepseek': '读 DeepSeek 登录文件夹', keychain: '读钥匙串里的密码', 'keychain-user': '读本用户的钥匙串文件夹', 'keychain-system': '读系统的钥匙串文件夹', 'env-secret': '看到带密钥字样的环境变量', 'shell-files': '读终端配置文件和命令历史', 'credential-files': '读常见的登录凭据文件' };
-export function evaluate(results: IsolationResult[], at = new Date().toISOString(), windows = isWindows): Selfcheck {
+macLabels['login-kimi'] = '读 Kimi Code 登录目录';
+export function evaluate(results: IsolationResult[], at = new Date().toISOString(), windows = isWindows, required = platformIsolations(windows)): Selfcheck {
   const failures: string[] = [], labels = windows ? { ...macLabels, ...windowsLabels() } : macLabels;
-  for (const isolation of platformIsolations(windows)) {
+  // 没安装 Grok 时 ~/.grok 整个不存在，无凭据可读、无全局配置可改，不因 ENOENT 挡住其他选手。
+  // 以后一旦安装并出现该目录，这些缓存里的 unknown 会立即恢复为失败，要求重新自检。
+  const ignoreGrok = !windows && !existsSync(join(homedir(), '.grok'));
+  for (const isolation of required) {
     const matches = results.filter(r => r?.isolation === isolation);
     if (matches.length !== 1) { failures.push(`${isolation} 未能自检（结果缺失或重复）`); continue; }
     const r = matches[0];
     if (r.error) { failures.push(`${isolation} 未能自检：${r.error}`); continue; }
     for (const name of expectedProbes(isolation, windows)) {
+      if (ignoreGrok && (name === 'login-grok' || name.startsWith('grok-'))) continue;
       const found = Array.isArray(r.probes) ? r.probes.filter(p => p?.name === name) : [];
       const p = found[0];
       if (found.length !== 1 || !p || !['allowed', 'denied', 'unknown'].includes(p.outcome)) { failures.push(`${isolation} ${labels[name]} 缺少有效结果`); continue; }
@@ -269,7 +280,7 @@ await unreadable('credential-files', ${JSON.stringify(CREDENTIAL_FILES)});
 ${expectedProbes(mode, false).filter(n => n.startsWith('login-')).map(name => {
     // 文件夹由自检在外面先建好，所以查“能不能列出”，没登录时也有确定的结果。
     if (name === 'login-deepseek') return `await test('login-deepseek', () => readdir(${JSON.stringify(deepseekHome())}));`;
-    const path = { 'login-codex': '.codex/auth.json', 'login-grok': '.grok/auth.json', 'login-cursor': '.cursor/cli-config.json' }[name]!;
+    const path = { 'login-codex': '.codex/auth.json', 'login-grok': '.grok/auth.json', 'login-cursor': '.cursor/cli-config.json', 'login-kimi': '.kimi-code/credentials' }[name]!;
     // 登录文件不存在（没登录）时，改查它所在的文件夹能不能列出：被挡住说明整个文件夹在隔离名单里，
     // 将来登录生成的文件同样读不到，算挡住；能列出或文件夹也不存在，仍按原来的 ENOENT 算拿不准。
     const dir = path.slice(0, path.lastIndexOf('/'));
@@ -359,7 +370,7 @@ export async function cleanGlobal(token: string, before: Before, probes: { creat
   }
   return problems;
 }
-export async function readSelfcheck(now = Date.now()): Promise<{ ok: boolean | null; at: string | null; note: string; passed?: boolean }> {
+export async function readSelfcheck(now = Date.now(), required = platformIsolations()): Promise<{ ok: boolean | null; at: string | null; note: string; passed?: boolean }> {
   let raw: Selfcheck;
   try { raw = await readJson(join(paths().cache, 'selfcheck.json')); }
   catch (e) { return { ok: hasCode(e, 'ENOENT') ? null : false, at: null, note: hasCode(e, 'ENOENT') ? '还没做过自检' : '自检缓存损坏，请重新自检' }; }
@@ -368,8 +379,8 @@ export async function readSelfcheck(now = Date.now()): Promise<{ ok: boolean | n
   if (!raw || raw.version !== cacheVersion || !Array.isArray(raw.results) || typeof raw.at !== 'string' || !Number.isFinite(Date.parse(raw.at))) return { ok: false, at: null, note: '自检缓存格式无效，请重新自检' };
   const age = now - Date.parse(raw.at);
   // passed：过期前那一次是不是通过的（Windows 上只有通过过的才值得自动重检，见 ensureSelfcheck）。
-  if (age < 0 || age >= 86400000) return { ok: null, at: raw.at, note: '自检已过期，请重新自检', passed: evaluate(raw.results, raw.at).ok };
-  const result = evaluate(raw.results, raw.at);
+  if (age < 0 || age >= 86400000) return { ok: null, at: raw.at, note: '自检已过期，请重新自检', passed: evaluate(raw.results, raw.at, isWindows, required).ok };
+  const result = evaluate(raw.results, raw.at, isWindows, required);
   return { ok: result.ok, at: result.at, note: result.note };
 }
 
@@ -496,9 +507,16 @@ export function ensurePlatform(used: Isolation[], windows = isWindows) {
 }
 // Windows 上自检不拦派活（2026-10-13 主人定，docs/design-windows.md 第 12 节）：那一整套加固是可选的，没装、没过，
 // 选手就用 Codex 自带的做法（见 windowsHardened）。只有装过并且上一次通过的，过期了才自动重检一次，免得加固悄悄失效。
-export async function ensureSelfcheck(check = selfcheck, windows = isWindows) {
-  let result = await readSelfcheck();
+export async function ensureSelfcheck(requiredOrCheck: Isolation[] | typeof selfcheck = platformIsolations(), checkOrWindows: typeof selfcheck | boolean = selfcheck, windows = isWindows) {
+  const required = Array.isArray(requiredOrCheck) ? requiredOrCheck : platformIsolations(typeof checkOrWindows === 'boolean' ? checkOrWindows : windows);
+  const check = typeof requiredOrCheck === 'function' ? requiredOrCheck : typeof checkOrWindows === 'function' ? checkOrWindows : selfcheck;
+  windows = typeof checkOrWindows === 'boolean' ? checkOrWindows : windows;
+  let result = await readSelfcheck(Date.now(), required);
   if (windows) { if (result.ok === null && result.passed) await check().catch(() => {}); return; }
-  if (result.ok === null) result = await check();
+  if (result.ok === null) {
+    const checked = await check();
+    const selected = evaluate(checked.results, checked.at, windows, required);
+    result = { ok: selected.ok, at: selected.at, note: selected.note };
+  }
   if (result.ok !== true) throw new Error(`隔离自检没过，不能派活：${result.note}。请由负责人运行 xagents selfcheck。`);
 }

@@ -1,8 +1,8 @@
 import { isAbsolute, join, normalize, parse, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { realpath } from 'node:fs/promises';
+import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { readJson } from './fsx.ts';
+import { hasCode, readJson } from './fsx.ts';
 import { jobDir, paths, toolRoot } from './paths.ts';
 import { createHash } from 'node:crypto';
 import type { Job } from './job.ts';
@@ -18,6 +18,7 @@ function tomlString(value: string) {
 
 // 每件活一个专用临时目录（任务目录下的 tmp/，xagents clean 时删掉），选手只能写它，不能写公用的 /tmp、/var/folders：
 // 那里有负责人会话的草稿和后台输出、别的程序的临时文件和套接字。依据 docs/research/tmp-writes-2026-09-30.md。
+// Cursor 群聊续接锁不写在这份通用模板里。只有 macOS 群聊续接轮由 run-package.ts 另加那一个目录（ADR-002）。
 export const jobTmpDir = (job: Pick<Job, 'id'>) => join(jobDir(job.id), 'tmp');
 
 // DeepSeek 选手的 Codex 文件夹（CODEX_HOME）：放 DeepSeek 的登录（API 钥匙）和它的会话记录，和主人自己 ~/.codex 里的 ChatGPT 登录分开。
@@ -79,7 +80,7 @@ export function codexPermissions(job: Pick<Job, 'mode' | 'repo' | 'worktree' | '
   const base = job.mode === 'read-only' ? ':read-only' : ':workspace', tail = network === true ? ',network={enabled=true}' : '';
   if (plain) return `permissions.xa={extends="${base}",filesystem={}${tail}}`;
   const set = (path: string, permission: 'read' | 'deny') => { if (!isWindows || exists(path)) rules.set(path, permission); };
-  for (const path of ['.ssh', '.codex', '.grok', '.cursor', '.aws', '.claude', '.config/gh', '.npmrc', ...homeDeny(), ...(project.denyReadHome ?? [])]) { tomlString(path); relativePath(path); set(join(homedir(), path), 'deny'); }
+  for (const path of ['.ssh', '.codex', '.grok', '.cursor', '.kimi-code', '.aws', '.claude', '.config/gh', '.npmrc', ...homeDeny(), ...(project.denyReadHome ?? [])]) { tomlString(path); relativePath(path); set(join(homedir(), path), 'deny'); }
   set(join(homedir(), '.codex/tmp'), 'read');
   tomlString(deepseekHome()); set(deepseekHome(), 'deny');
   for (const dir of keychainDirs()) { tomlString(dir); set(dir, 'deny'); }
@@ -108,11 +109,51 @@ export function cursorState(dir: string) {
 // （cursor-agent 2026.09.28 源码 ../cursor-config 的 socket 目录函数；实测见 docs/research/global-config-writes-2026-09-30.md 第 8 节）。
 // 所以不放在任务目录下，而放在登记处的 cursor/<任务号哈希> 下；清理时一起删。
 export const cursorStateDir = (job: Pick<Job, 'id'>) => join(paths().home, 'cursor', createHash('sha256').update(job.id).digest('hex').slice(0, 12));
+// Kimi Code 通过 KIMI_CODE_HOME 把配置、登录、会话和日志全部搬到每件任务的独立状态目录。
+export const kimiStateDir = (job: Pick<Job, 'id'>) => join(paths().home, 'kimi', createHash('sha256').update(job.id).digest('hex').slice(0, 12));
 export const CURSOR_DATA_LIMIT = 84;
 export function checkCursorState(dir: string) {
   const data = cursorState(dir).data;
   if (data.length > CURSOR_DATA_LIMIT) throw new Error(`Cursor 的数据目录路径太长（${data.length} 个字符，最多 ${CURSOR_DATA_LIMIT}），它会改用公用的 /tmp/.cursor 而启动失败。请把登记处（XAGENTS_HOME）换到短一些的路径。`);
   return dir;
+}
+// cursor-agent 2026.10.14 把续接锁写死在 /tmp/cursor-agent-persist-<uid>，不认 TMPDIR，也不认 CURSOR_DATA_DIR。
+// 通用沙箱不放开它。macOS 上 Cursor 项目群聊的续接轮才由运行包单独加上这一个目录及其真实路径（ADR-002）。
+// 加上之前必须是本人的普通文件夹、权限 0700、不是符号链接；真实路径只能是 /private/tmp 下的同一目录。不放开 /tmp 本身。
+export function cursorPersistDir(): string | null {
+  if (process.platform !== 'darwin' || typeof process.getuid !== 'function') return null;
+  const uid = process.getuid();
+  if (!Number.isInteger(uid) || uid < 0) return null;
+  return `/tmp/cursor-agent-persist-${uid}`;
+}
+export async function ensureCursorPersistDir(dir: string, uid = process.getuid?.()): Promise<void> {
+  if (uid === undefined) throw new Error('Cursor 续接目录只在 macOS 上使用。');
+  let info;
+  try { info = await lstat(dir); }
+  catch (e) {
+    if (!hasCode(e, 'ENOENT')) throw e;
+    await mkdir(dir, { mode: 0o700 });
+    await chmod(dir, 0o700);
+    info = await lstat(dir);
+  }
+  if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('Cursor 续接目录不是一个普通文件夹，不能派活。');
+  if (info.uid !== uid) throw new Error('Cursor 续接目录的主人不对，不能派活。');
+  if ((info.mode & 0o777) !== 0o700) {
+    await chmod(dir, 0o700);
+    info = await lstat(dir);
+  }
+  if (info.isSymbolicLink() || !info.isDirectory() || info.uid !== uid || (info.mode & 0o777) !== 0o700) {
+    throw new Error('Cursor 续接目录权限过宽，不能派活。');
+  }
+}
+export async function cursorPersistPaths(): Promise<string[]> {
+  const dir = cursorPersistDir();
+  if (!dir) return [];
+  await ensureCursorPersistDir(dir);
+  const real = await realpath(dir);
+  const uid = String(process.getuid?.());
+  if (real !== dir && real !== `/private/tmp/cursor-agent-persist-${uid}`) throw new Error('Cursor 续接目录指向了意外位置，不能派活。');
+  return [...new Set([dir, real])];
 }
 // Grok 只需要写本次副本自己的会话文件夹（~/.grok/sessions/<副本路径逐段转义>）。
 // 实测转义同 encodeURIComponent；! ' ( ) * ~ 两种写法都放开，副本路径和它的真实路径各算一份。
@@ -138,8 +179,10 @@ function checkRoot(path: string, what: string) {
   }
 }
 
-export async function sandbox(job: Job, project: Isolated, state = cursorStateDir(job), tmp = jobTmpDir(job), network = false) {
-  const template = await readJson<{ filesystem: { allowWrite: string[]; denyRead: string[] }; [key: string]: unknown }>(join(toolRoot, 'sandbox', `${isolationOf(job.who) === 'grok' ? 'grok' : 'cursor'}.json`));
+export async function sandbox(job: Job, project: Isolated, state?: string, tmp = jobTmpDir(job), network = false) {
+  const isolation = isolationOf(job.who);
+  state ??= isolation === 'kimi' ? kimiStateDir(job) : cursorStateDir(job);
+  const template = await readJson<{ filesystem: { allowWrite: string[]; denyRead: string[] }; [key: string]: unknown }>(join(toolRoot, 'sandbox', `${isolation === 'grok' ? 'grok' : isolation === 'kimi' ? 'kimi' : 'cursor'}.json`));
   assertNoLocalEscape(template);
   // 只有库接口省略 allowedDomains 才是不限制网络，开着时改走 srt-open.ts。
   if (network === true) delete template.network;
@@ -147,6 +190,7 @@ export async function sandbox(job: Job, project: Isolated, state = cursorStateDi
   template.filesystem.allowWrite = template.filesystem.allowWrite.flatMap((p: string) =>
     p === '__WT__' ? (job.mode === 'read-only' ? [] : [job.worktree])
     : p === '__CURSOR_STATE__' ? [state]
+    : p === '__KIMI_STATE__' ? [state]
     : p === '__TMP__' ? [tmp]
     : p === '__GROK_SESSION__' ? sessions : [p]);
   for (const path of template.filesystem.allowWrite) checkRoot(path, '可写路径');

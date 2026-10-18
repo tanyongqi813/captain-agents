@@ -17,7 +17,8 @@ import { checkChoice } from './policy.ts';
 import { findProject, worktreePath } from './project.ts';
 import { uncommitted } from './project-check.ts';
 import { checkQuota, ensureQuota } from './quota.ts';
-import { isolationOf, spec } from './roster.ts';
+import { isolationOf, spec, vendorOf } from './roster.ts';
+import { assertDeepseekAvailable } from './deepseek-settings.ts';
 import { ensurePlatform, ensureSelfcheck } from './selfcheck.ts';
 import { extraDenyRead, readSettings } from './settings.ts';
 import {
@@ -355,11 +356,12 @@ export async function startTeam(file: string, options: TeamStartOptions): Promis
   const maxMinutes = bounded(options.minutes, 60, 10, 240, '时长请填 10–240 的整数（分钟）。');
   const kind = options.kind || '实现';
   if (!KINDS.includes(kind)) throw new Error('--kind 只允许修复、实现、审查、调研、测量，请修改后重试。');
-  const { workers, archivedProjects, limits, networkAllowed } = await readSettings();
+  const { workers, archivedProjects, limits, networkAllowed, deepseek } = await readSettings();
   const writer = selection(options.writer), reviewer = selection(options.reviewer);
-  if (isolationOf(writer.who) === 'cursor' || isolationOf(reviewer.who) === 'cursor') throw new Error('Cursor 还没实测续接，暂时不能当搭档。请改用 Grok、Codex 或 DeepSeek。');
+  if (isolationOf(writer.who) === 'cursor' || isolationOf(reviewer.who) === 'cursor') throw new Error('Cursor 还没实测续接，暂时不能当搭档。请改用 Grok、Codex、Kimi Code 或 DeepSeek。');
   if (writer.model === reviewer.model) throw new Error('写手和审查必须是不同的模型，否则容易犯同一种错。请换一位写手或审查。');
   checkChoice(workers, writer); checkChoice(workers, reviewer);
+  assertDeepseekAvailable(deepseek, [writer, reviewer].some(choice => vendorOf(choice.who) === 'deepseek'));
   const project = { ...await findProject(options.project), denyReadHome: await extraDenyRead() };
   if (archivedProjects.includes(project.name)) throw new Error(`项目 ${project.name} 已归档。要派活先取消归档：xagents project unarchive ${project.name}`);
   await worktreePath(project, 'check');
@@ -375,7 +377,7 @@ export async function startTeam(file: string, options: TeamStartOptions): Promis
   if (!task) throw new Error('题目是空的。请写上要做的事再开队。');
   checkQuota(await ensureQuota(), [writer, reviewer], options.force, limits.quotaStop);
   if ([writer, reviewer].some(choice => isolationOf(choice.who) !== 'codex') && !process.env.XAGENTS_FAKE_WORKER) await srtPath();
-  if (!process.env.XAGENTS_FAKE_WORKER) { ensurePlatform([writer, reviewer].map(choice => isolationOf(choice.who))); await ensureSelfcheck(); }
+  if (!process.env.XAGENTS_FAKE_WORKER) { const used = [writer, reviewer].map(choice => isolationOf(choice.who)); ensurePlatform(used); await ensureSelfcheck(used); }
   const id = await reserveTeam();
   const title = options.title || basename(file, extname(file));
   const team: Team = {

@@ -89,8 +89,8 @@ export function grokEnvironment() {
   for (const source of ['CLAUDE', 'CURSOR']) for (const feature of ['AGENTS', 'HOOKS', 'MCPS', 'RULES', 'SKILLS']) env[`GROK_${source}_${feature}_ENABLED`] = 'false';
   return env;
 }
-const names = { codex: 'Codex', grok: 'Grok', cursor: 'Cursor' };
-const labels = { codex: ['周额度'], grok: ['本期额度'], cursor: ['自家模型池', '其他模型池'] };
+const names: Record<Provider, string> = { codex: 'Codex', grok: 'Grok', cursor: 'Cursor', kimi: 'Kimi Code' };
+const labels: Record<Provider, string[]> = { codex: ['周额度'], grok: ['本期额度'], cursor: ['自家模型池', '其他模型池'], kimi: ['额度'] };
 function unavailable(icon: Provider, error: string): QuotaEntry {
   return { name: names[icon], icon, plan: null, at: null, error,
     bars: labels[icon].map(label => ({ label, used: null, reset: null })) };
@@ -194,7 +194,7 @@ export async function queryQuota(options: QuotaOptions = {}): Promise<QuotaSnaps
   const endpoint = options.endpoint ?? await codexEndpoint();
   const previous = await readQuotaCache(endpoint);
   const listed = await listedProviders(options);
-  const providers = await Promise.all(listed.filter(p => p.reason === null && !(p.icon === 'codex' && endpoint.custom)).map(async ({ icon }) => {
+  const providers = await Promise.all(listed.filter(p => p.reason === null && p.icon !== 'kimi' && !(p.icon === 'codex' && endpoint.custom)).map(async ({ icon }) => {
     try {
       if (icon === 'codex') {
         const directory = options.sessionsDir ?? process.env.XAGENTS_CODEX_SESSIONS;
@@ -210,11 +210,24 @@ export async function queryQuota(options: QuotaOptions = {}): Promise<QuotaSnaps
       const root = await mkdtemp(join(paths().cache, 'cursor-usage-')), cwd = join(root, 'work'), state = cursorState(join(root, 'state'));
       try {
         await mkdir(cwd);
+        const cursorEnv: NodeJS.ProcessEnv = { TERM: 'xterm-256color', CURSOR_CONFIG_DIR: state.config, CURSOR_DATA_DIR: state.data };
+        // 临时配置目录不会带登录信息；和正式派活一致，从钥匙串取令牌后只交给本次进程。
+        if (!options.execute && !process.env.XAGENTS_QUERY_EXEC) {
+          const token = await (await import('./workers.ts')).cursorToken();
+          // 新版 CLI 文档使用 CURSOR_API_KEY；保留旧变量兼容之前的版本。
+          cursorEnv.CURSOR_API_KEY = token;
+          cursorEnv.CURSOR_AUTH_TOKEN = token;
+          cursorEnv.AGENT_CLI_CREDENTIAL_STORE = 'memory';
+        }
         // 配置和项目状态（含信任标记）同派活一样搬进这次的临时目录，查完一起删，不在 ~/.cursor/projects 留目录；登录不受影响。
         // 窗口大小 60×140 与实测能用的参考实现一致；不用 script，原因见 pty-bridge.py 开头。
         return parseCursorQuota(await execute({ file: 'python3', args: [join(toolRoot, 'src/core/pty-bridge.py'), '60', '140', 'cursor-agent', '--trust', '--mode', 'ask'], cwd,
-          env: { TERM: 'xterm-256color', CURSOR_CONFIG_DIR: state.config, CURSOR_DATA_DIR: state.data }, timeoutMs: 27_500, graceMs: 3000,
-          writes: [{ afterMs: 6000, text: '/usage' }, { afterMs: 7500, text: '\r' }], complete: output => cleanTerminal(output).includes('Esc to close') }), at);
+          env: cursorEnv, timeoutMs: 75_000, graceMs: 3000,
+          // Cursor 首次启动或恢复状态时偶尔超过 6 秒才接收键盘输入；若第一次指令被启动画面吞掉，稍后重试。
+          writes: [{ afterMs: 6000, text: '/usage' }, { afterMs: 7500, text: '\r' },
+            { afterMs: 20_000, text: '/usage' }, { afterMs: 21_500, text: '\r' },
+            { afterMs: 40_000, text: '/usage' }, { afterMs: 41_500, text: '\r' }],
+          complete: output => cleanTerminal(output).includes('Esc to close') }), at);
       } finally { await rm(root, { recursive: true, force: true }); }
     } catch (e) { return keepPrevious(icon, (e as Error).message, previous); }
   }));
@@ -240,7 +253,7 @@ export async function ensureQuota(options: QuotaOptions = {}) {
   const endpoint = options.endpoint ?? await codexEndpoint();
   const cached = await readQuotaCache(endpoint), now = options.now ?? new Date();
   const listed = await listedProviders(options);
-  const icons = listed.filter(p => p.reason === null && !(p.icon === 'codex' && endpoint.custom)).map(p => p.icon);
+  const icons = listed.filter(p => p.reason === null && p.icon !== 'kimi' && !(p.icon === 'codex' && endpoint.custom)).map(p => p.icon);
   if (cached) cached.providers = cached.providers.filter(p => icons.includes(p.icon));
   const age = cached ? now.getTime() - Date.parse(cached.queriedAt) : Infinity;
   return cached && age >= 0 && age <= 600_000 && icons.every(icon => cached.providers.some(p => p.icon === icon)) ? cached : queryQuota({ ...options, endpoint });
@@ -249,10 +262,11 @@ export async function ensureQuota(options: QuotaOptions = {}) {
 export function quotaPool(who: Who) {
   if (vendorOf(who) === 'deepseek') return { name: 'DeepSeek', label: '余额' };
   const provider = isolationOf(who);
-  const label = provider === 'codex' ? '周额度' : provider === 'grok' ? '本期额度' : spec(who).pool === 'auto' ? '自家模型池' : '其他模型池';
+  const label = provider === 'codex' ? '周额度' : provider === 'grok' ? '本期额度' : provider === 'kimi' ? '额度' : spec(who).pool === 'auto' ? '自家模型池' : '其他模型池';
   return { name: names[provider], label };
 }
 export function quotaBar(snapshot: QuotaSnapshot | null | undefined, who: Who) {
+  if (isolationOf(who) === 'kimi') return undefined;
   if (vendorOf(who) !== isolationOf(who)) return undefined;
   const entry = snapshot?.providers.find(p => p.icon === isolationOf(who));
   if (!entry || entry.error) return undefined;

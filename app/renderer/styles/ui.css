@@ -29,6 +29,7 @@ button.plain { border: 0; background: transparent; padding: 0; text-align: inher
 .logo .mono-mark { display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--on-brand); background: var(--brand-other); }
 .mono-mark[data-brand="codex"] { background: var(--brand-codex); } .mono-mark[data-brand="grok"] { background: var(--brand-grok); }
 .mono-mark[data-brand="cursor"] { background: var(--brand-cursor); } .mono-mark[data-brand="claude"] { background: var(--brand-claude); }
+.mono-mark[data-brand="kimi"] { background: var(--brand-kimi); }
 .mono-mark[data-brand="deepseek"] { background: var(--brand-deepseek); }
 .logo-sm .mono-mark { font-size: .75em; }
 .logo .badge { position: absolute; right: -12%; bottom: -12%; width: 45%; height: 45%; border-radius: 33%; box-shadow: 0 0 0 2px var(--panel); }
@@ -186,6 +187,15 @@ button.plain { border: 0; background: transparent; padding: 0; text-align: inher
 /* ---------- 表单 ---------- */
 .field { display: block; width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); }
 .field:focus { border-color: var(--focus); }
+.provider-intro { margin: 0 0 var(--sp-4); line-height: 1.55; }
+.provider-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.provider-field { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); font-weight: 600; }
+.provider-field .select { align-self: flex-start; min-width: 240px; }
+.provider-field small { color: var(--muted); font-weight: 400; }
+.provider-divider { height: 1px; background: var(--line); }
+.provider-catalog { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.provider-catalog > span { display: flex; flex-direction: column; gap: var(--sp-1); }
+.provider-catalog small { color: var(--muted); }
 /* 取色框：和输入框同一套边框、底色、圆角，去掉系统自带的白边 */
 .field-color { flex: none; width: 52px; height: 30px; padding: var(--sp-1); cursor: pointer; -webkit-appearance: none; appearance: none; }
 .field-color::-webkit-color-swatch-wrapper { padding: 0; }
@@ -256,6 +266,12 @@ fieldset.settings { border: 0; margin: 0; padding: 0; min-width: 0; }
 .setting-foot { margin: 0; min-height: 0; font-size: var(--fs-sm); color: var(--muted); }
 .setting-actions { display: flex; justify-content: flex-end; margin-top: var(--sp-3); }
 
+/* 设置 → 项目（ui-spec 第 10 节）：确认弹窗里的只读仓库块和表单、列表里的路径行。 */
+.project-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.project-repo { margin: 0; padding: var(--sp-2) var(--sp-3); background: var(--sunk); border-radius: var(--r-md); font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); word-break: break-all; user-select: text; }
+.project-repo-line { display: block; font-family: var(--font-mono); }
+.project-field-bad { color: var(--bad); }
+
 /* ---------- 留言 ---------- */
 .comments { list-style: none; margin: 0 0 var(--sp-3); padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .comment { max-width: 85%; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); }
@@ -295,6 +311,7 @@ fieldset.settings { border: 0; margin: 0; padding: 0; min-width: 0; }
 .ring[data-level="bad"] .ring-arc { stroke: var(--bad); }
 .ring[data-empty] .ring-track { stroke: var(--faint); }
 .quota-item { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.connected-item { display: inline-flex; align-items: center; padding-inline: var(--sp-1); }
 .quota-pct { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .quota-item[data-level="warn"] .quota-pct { color: var(--warn); font-weight: 600; }
 .quota-item[data-level="bad"] .quota-pct { color: var(--bad); font-weight: 600; }
@@ -358,3 +375,6 @@ fieldset.settings { border: 0; margin: 0; padding: 0; min-width: 0; }
 .rich pre { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--sunk); overflow-x: auto; }
 .rich pre code { padding: 0; background: transparent; white-space: pre; }
 .notice-warn { background: var(--warn-soft); }
+.provider-toggle { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-6); }
+.provider-toggle > span:first-child { display: grid; gap: var(--sp-1); }
+.provider-toggle small { font-weight: 400; line-height: 1.45; }

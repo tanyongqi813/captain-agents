@@ -2,7 +2,7 @@
   "name": "xagents",
   "version": "0.3.0",
   "private": true,
-  "description": "派活工作台：把活派给本机的 Codex、Grok、Cursor 命令行，登记、隔离、验收、看板",
+  "description": "派活工作台：把活派给本机的 Codex、Grok、Cursor、Kimi Code 命令行，登记、隔离、验收、看板",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     "pack": "node scripts/pack.mjs",
     "install-app": "bash scripts/install-app.sh",
     "typecheck": "tsc -p tsconfig.json && tsc -p app/main/tsconfig.json && tsc -p app/preload/tsconfig.json && tsc -p app/renderer/tsconfig.json",
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "node --test --test-timeout=120000 \"test/*.test.ts\"",
     "test:ui": "vitest run",
     "test:e2e": "node --test test/e2e/smoke.ts",
     "verify": "npm run typecheck && npm test && npm run test:ui && npm run build && npm run test:e2e",

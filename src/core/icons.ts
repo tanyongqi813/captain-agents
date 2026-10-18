@@ -13,6 +13,7 @@ export const iconSources = {
   codex: 'ChatGPT.app/Contents/Resources/icon-codex-light.png',
   grok: 'Grok Bot.app/Contents/Resources/icon.icns',
   cursor: 'Cursor.app/Contents/Resources/Cursor.icns',
+  kimi: 'Kimi.app/Contents/Resources/icon.icns',
   claude: 'Claude.app/Contents/Resources/electron.icns',
   // DeepSeek 选手借 Codex 跑，但界面上按 DeepSeek 显示；图标取 DeepSeek 自家桌面应用的，没装就显示字母。
   deepseek: 'DeepSeek Harness.app/Contents/Resources/icon.png',

@@ -18,7 +18,7 @@
 //   中档、超高档接口也收，但会被换算（第三方资料：medium → high、xhigh → max），超高档等于拉满，所以只开高档。
 //   没有快速版。依据 docs/research/connect-deepseek-2026-10-02.md。
 
-export type Isolation = 'codex' | 'grok' | 'cursor';
+export type Isolation = 'codex' | 'grok' | 'cursor' | 'kimi';
 // 谁家出钱、谁家的登录：额度、模型核对、登录检查按它分。不写就和隔离同名。
 export type Vendor = Isolation | 'deepseek';
 export type Effort = 'medium' | 'high' | 'xhigh';
@@ -43,6 +43,7 @@ export const channelTemplates: Record<Vendor, {
   grok: { name: 'Grok', isolation: 'grok', effortInName: false, icon: 'grok', fast: model => ({ model: `${model}-build-fast` }), decorate: () => ({}) },
   cursor: { name: 'Cursor', isolation: 'cursor', effortInName: true, icon: 'cursor', fast: () => ({ suffix: '-fast' }),
     decorate: model => ({ pool: model.startsWith('grok-') ? 'auto' : 'api', badge: model.startsWith('claude-') ? 'claude' : model.startsWith('grok-') ? 'grok' : 'codex' }) },
+  kimi: { name: 'Kimi Code', isolation: 'kimi', effortInName: false, icon: 'kimi', fast: () => null, decorate: () => ({}) },
   deepseek: { name: 'DeepSeek', isolation: 'codex', effortInName: false, icon: 'deepseek', fast: () => null, decorate: () => ({}) },
 };
 function connection(channel: Vendor, model: string) {
@@ -64,6 +65,8 @@ export const builtinRoster = {
     model: 'claude-opus-5-5', efforts: all, fast: channelTemplates.cursor.fast('') },
   'cursor-sonnet': { handle: 'CursorSonnet', ...connection('cursor', 'claude-sonnet-5-5'), name: 'Cursor · Sonnet', shown: 'Claude Sonnet 5.5',
     model: 'claude-sonnet-5-5', efforts: all, fast: null, noFast: 'Cursor 里的 Sonnet 5.5 没有快速版' },
+  kimi: { handle: 'Kimi', ...connection('kimi', 'kimi-code/kimi-for-coding'), name: 'Kimi Code', shown: 'K2.8 Preview',
+    model: 'kimi-code/kimi-for-coding', efforts: ['high'], fast: null, noFast: 'Kimi Code 暂不开放快速版' },
   // 借 Codex 程序跑：同一套 Codex 隔离；登录是 DeepSeek 的 API 钥匙，由 Codex 存在派活工作台单独的文件夹里（见 workers.ts）。
   deepseek: { handle: 'DeepSeek', ...connection('deepseek', 'deepseek-v4-pro'), name: 'DeepSeek', shown: 'DeepSeek V4 Pro',
     model: 'deepseek-v4-pro', efforts: ['high'], fast: null, noFast: 'DeepSeek 没有快速版' },
@@ -130,7 +133,7 @@ export const isManualModel = (who: Who) => manual.has(who);
 export const setModelsCatalog = (value: ModelsCache | null) => { catalog = value; };
 export function modelGone(who: Who, cache = catalog): boolean {
   const channel = vendorOf(who);
-  if (channel === 'deepseek' || isManualModel(who)) return false;
+  if (channel === 'deepseek' || channel === 'kimi' || isManualModel(who)) return false;
   const latest = cache?.channels[channel];
   return !!latest && latest.error === undefined && !latest.models.some(m => m.model === spec(who).model);
 }
@@ -138,13 +141,14 @@ export function modelGone(who: Who, cache = catalog): boolean {
 // 模型数据只能选用通道已有的接法，不允许配置提供隔离、额度池或任意启动后缀。
 
 export function specFor(channel: Vendor, discovered: DiscoveredModel): Spec & { who: Who } {
-  if (!isChannel(channel) || !isModelName(discovered.model)) throw new Error('模型名或通道不合法。');
+  if (!isChannel(channel)) throw new Error('模型名或通道不合法。');
   const builtin = builtinWhos.find(w => {
     const s = builtinRoster[w as keyof typeof builtinRoster];
     return ((s.vendor ?? s.isolation) === channel) && s.model === discovered.model;
   });
   if (builtin) return { ...builtinRoster[builtin as keyof typeof builtinRoster], who: builtin };
-  if (channel === 'deepseek') throw new Error('DeepSeek 只能在内置两位里选。');
+  if (!isModelName(discovered.model)) throw new Error('模型名或通道不合法。');
+  if (channel === 'deepseek' || channel === 'kimi') throw new Error(`${channelNames[channel]} 只能使用内置模型。`);
   if (channel === 'cursor' && !floor.cursorFamilies.some(f => discovered.model.startsWith(`${f}-`))) throw new Error('Cursor 只收 Claude、GPT、Grok 的模型。');
   if (channel === 'grok' && (!discovered.model.startsWith('grok-') || /-(?:build-fast|fast)$/.test(discovered.model))) throw new Error('Grok 只能选择基础模型。');
   const efforts = all.filter(e => discovered.efforts.includes(e));

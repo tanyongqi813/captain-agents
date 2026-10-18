@@ -156,7 +156,7 @@ test('快捷键、筛选和视图记忆；localStorage 不可用时容错', asyn
   render(<App />);
   await screen.findByText('现在没有在跑的活');
   fireEvent.keyDown(document, {
-    key: '3',
+    key: '4',
     metaKey: true
   });
   fireEvent.click(screen.getByRole('button', {
@@ -167,7 +167,7 @@ test('快捷键、筛选和视图记忆；localStorage 不可用时容错', asyn
     filter: '研究'
   });
   fireEvent.keyDown(document, {
-    key: '4',
+    key: '5',
     metaKey: true
   });
   expect(screen.getByRole('heading', {
@@ -401,8 +401,8 @@ test('全应用不再出现已经不存在的功能的字样：看板、历史�
     fireEvent.keyDown(document, { key: 'Escape' });
   }
   act(() => opened?.({ kind: 'batch', id: 'b' })); expect(screen.getByRole('dialog').textContent).toContain('说明'); check('一批的弹窗'); fireEvent.keyDown(document, { key: 'Escape' });
-  fireEvent.keyDown(document, { key: '3', metaKey: true }); check('历史');
-  fireEvent.keyDown(document, { key: '4', metaKey: true }); check('各家表现');
+  fireEvent.keyDown(document, { key: '4', metaKey: true }); check('历史');
+  fireEvent.keyDown(document, { key: '5', metaKey: true }); check('各家表现');
   fireEvent.keyDown(document, { key: ',', metaKey: true }); await screen.findByLabelText('系统通知'); check('设置');
 });
 test('有未回复留言的卡片带小圆点；负责人回复或标记处理后消失，不写字', async () => {

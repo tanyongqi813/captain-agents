@@ -1,12 +1,13 @@
 // 接入 AI（docs/design-connect.md）：写进各家常驻规矩文件的那一段，全平台只有这一份。
 // 核心 connect.ts 写文件用它，对接提示词和设置页确认框也引它；不依赖 Node，界面可以直接引。
 export const LEAD_RULE = `# 派活工作台
-这台电脑装了派活工作台（命令 \`xagents\`）。要把开发、修复、审查、调研交给别的 AI（Codex、Grok、Cursor、DeepSeek）去做时，一律用 \`xagents\`，不要直接运行 \`codex exec\`、\`grok -p\`、\`cursor-agent -p\` 这类命令。当负责人开工前、对话被压缩后接着干活前，先运行 \`xagents guide\`，读完再动手。
+这台电脑装了派活工作台（命令 \`xagents\`）。要把开发、修复、审查、调研交给别的 AI（Codex、Grok、Cursor、Kimi Code、DeepSeek）去做时，一律用 \`xagents\`，不要直接运行 \`codex exec\`、\`grok -p\`、\`cursor-agent -p\`、\`kimi --prompt\` 这类命令。当负责人开工前、对话被压缩后接着干活前，先运行 \`xagents guide\`，读完再动手。
+已登记项目根目录有 \`docs/TASK_LIST.md\` 时，先读它和当前任务链接的 Task Spec，任务范围、约束和验收以 spec 为准，只做状态允许且依赖已满足的任务；spec 里的“推荐执行者”只是参考，选手由你按手册选。台账存在不等于把任务全做掉，只做主人明确要求的或已获授权推进的。
 如果你是派活工作台派来干活的选手（题目开头写着“你是负责人派来完成本题的助手”），忽略这一段。`;
 
 // 能“一键接入”的几家，顺序就是设置页从上到下的顺序。
 // dsh：DeepSeek 官方开源的 DeepSeek Harness（2026-10-02 加，依据 docs/research/connect-dsh-2026-10-02.md）。
-export const CONNECT_AIS = ['claude', 'codex', 'grok', 'cursor', 'dsh'] as const;
+export const CONNECT_AIS = ['codex', 'claude', 'grok', 'cursor', 'dsh'] as const;
 export type ConnectAi = typeof CONNECT_AIS[number];
 export const isConnectAi = (value: unknown): value is ConnectAi => typeof value === 'string' && (CONNECT_AIS as readonly string[]).includes(value);
 // 一家的接入状态（xagents connect 和设置页共用）。
@@ -28,7 +29,7 @@ export type ConnectStatus = {
 // 末尾请那个 AI 征得主人同意后把 LEAD_RULE 写进它自己的常驻规矩，这样不在一键接入名单里的 AI 也能跨压缩。
 export const INTRO_TEXT = `# 派活工作台对接说明（给来当负责人的 AI）
 
-这台电脑装了“派活工作台”（命令 \`xagents\`，一般在 \`~/.local/bin/xagents\`）。它把目标清楚的开发、修复、审查、调研派给本机的 Codex、Grok、Cursor 命令行，以及借 Codex 跑的 DeepSeek 去做（它们叫“选手”）；每件活在隔离的副本里做，派活工作台负责隔离、额度、进度、验收和记录，主人在“派活工作台”应用里看进度。
+这台电脑装了“派活工作台”（命令 \`xagents\`，一般在 \`~/.local/bin/xagents\`）。默认由 Codex 当负责人。它把目标清楚的开发、修复、审查、调研派给本机的 Codex、Grok、Cursor、Kimi Code 命令行，以及借 Codex 跑的 DeepSeek 去做（它们叫“选手”）；每件活在隔离的副本里做，派活工作台负责隔离、额度、进度、验收和记录，主人在“派活工作台”应用里看进度。
 
 你来当负责人：拆活、派活、盯进度、审查、验收、打分、拍板；选手只管干活。
 
@@ -38,6 +39,7 @@ export const INTRO_TEXT = `# 派活工作台对接说明（给来当负责人的
 
 几条要紧的：
 - 派活、验收、采用、打分都用 \`xagents\` 的命令完成（\`xagents --help\` 看全部），不要绕过它去改选手的副本或记录。
+- 项目根目录有 \`docs/TASK_LIST.md\` 时，先读它和当前任务链接的 Task Spec 再动手：范围、状态、依赖和验收以 spec 为准；里面的“推荐执行者”只是参考，派给谁按选手、主人设置、额度和任务性质定，不因台账存在就把任务全做掉。
 - 安全底线（隔离、选手不提交）和主人在设置里关掉的选手、强度由平台强制执行，不要想办法绕过。额度停派线由主人在桌面设置里选 50%、60%、70%、80%、90% 或不设限，缺省 80%；设了就执行，不设限时厂家报告已触顶仍拒绝。负责人和选手都不能改设置，\`--force\` 只跳过额度检查。
 - 真正需要主人本人的事（密钥和登录、收不回的对外动作、只有主人能拍的板）在对话里问；其余的自己处理，不打扰主人。
 - 和主人说话用中文大白话：先说做了什么、怎么验证的、有没有坑。

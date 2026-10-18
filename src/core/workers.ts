@@ -1,6 +1,6 @@
 import { nodeRunner, externalEnvironment } from './node-runtime.ts';
 import { spawn } from 'node:child_process';
-import { access, mkdir } from 'node:fs/promises';
+import { access, cp, mkdir } from 'node:fs/promises';
 import { join, resolve, win32 } from 'node:path';
 import { homedir } from 'node:os';
 import { jobDir, paths, toolRoot } from './paths.ts';
@@ -9,7 +9,7 @@ import { StreamParser, LogTail } from './activity.ts';
 import type { Job, Command } from './job.ts';
 import type { Who } from './roster.ts';
 import type { Project } from './project.ts';
-import { checkCursorState, codexPermissions, cursorState, cursorStateDir, deepseekHome, jobTmpDir } from './sandbox.ts';
+import { checkCursorState, codexPermissions, cursorState, cursorStateDir, deepseekHome, jobTmpDir, kimiStateDir } from './sandbox.ts';
 import { execute } from './verify.ts';
 import type { Executor } from './verify.ts';
 import { grokEnvironment } from './quota.ts';
@@ -20,6 +20,7 @@ import type { Effort } from './roster.ts';
 import { readdirSync, statSync } from 'node:fs';
 import { isWindows } from './platform.ts';
 import { codexEndpoint, official } from './endpoint.ts';
+import type { DeepseekEndpoint } from './deepseek-settings.ts';
 
 const effortNames: Record<Effort, string> = { medium: '中档', high: '高档', xhigh: '超高档' };
 // --who 写法：选手:强度[:fast]。强度只开中档、高档、超高档，永远不拉满，也不开最低档；允许哪些由 roster 决定。
@@ -37,7 +38,9 @@ export function selection(value: string) {
 // DeepSeek 借 Codex 跑：Codex 文件夹换成派活工作台单独的那个（里面只有 DeepSeek 的登录），主人 ~/.codex 的 ChatGPT 登录不受影响。
 // 钥匙由 Codex 主进程在隔离外读、只发给 DeepSeek；选手看不到带钥匙的环境变量（规则在 env.ts，所有选手都一样）。
 // 依据 docs/research/connect-deepseek-2026-10-02.md。
-export const DEEPSEEK_PROVIDER = 'model_providers.deepseek={name="DeepSeek",base_url="https://api.deepseek.com/",wire_api="responses",requires_openai_auth=true}';
+export function deepseekProvider(endpoint: DeepseekEndpoint) {
+  return `model_providers.deepseek={name="DeepSeek",base_url=${JSON.stringify(endpoint.baseUrl)},wire_api=${JSON.stringify(endpoint.wireApi)},requires_openai_auth=true}`;
+}
 // 登录只认 API 钥匙，并固定存成文件（不进系统钥匙串，免得和主人自己的 Codex 登录混在一处）；登录和派活用同一组。
 const DEEPSEEK_LOGIN = ['-c', 'forced_login_method="api"', '-c', 'cli_auth_credentials_store="file"'];
 // 这些变量在 Codex 里比登录文件优先（codex-cli 0.159 的认证顺序），带着就会把 OpenAI 的钥匙发给 DeepSeek；
@@ -47,14 +50,16 @@ const DEEPSEEK_LOGIN = ['-c', 'forced_login_method="api"', '-c', 'cli_auth_crede
 export const KEY_VARS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'DEEPSEEK_API_KEY',
   'OPENAI_FEDERATION_RULE_ID', 'OPENAI_IDENTITY_TOKEN_FILE', 'OPENAI_WORKLOAD_IDENTITY_CONTEXT'];
 const deepseekEnv = (): NodeJS.ProcessEnv => ({ CODEX_HOME: deepseekHome(), ...Object.fromEntries(KEY_VARS.map(name => [name, undefined])) });
-function deepseekArgs(env: Record<string, string>) {
+function deepseekArgs(env: Record<string, string>, endpoint: DeepseekEndpoint) {
   env.CODEX_HOME = deepseekHome();
-  return ['-c', 'model_provider="deepseek"', '-c', DEEPSEEK_PROVIDER, ...DEEPSEEK_LOGIN, '-c', 'web_search="disabled"'];
+  return ['-c', 'model_provider="deepseek"', '-c', deepseekProvider(endpoint), ...DEEPSEEK_LOGIN, '-c', 'web_search="disabled"'];
 }
+async function configuredDeepseek() { return (await import('./settings.ts')).readSettings().then(s => s.deepseek); }
 // 派 DeepSeek 活前在隔离外查一次登录；没登录就不派，提示主人自己登录（钥匙只有主人能拿到）。
 export async function checkDeepseekLogin(run: Executor = execute) {
   await mkdir(deepseekHome(), { recursive: true, mode: 0o700 });
-  const status = codexLaunch(['login', 'status', ...DEEPSEEK_LOGIN]);
+  const endpoint = await configuredDeepseek();
+  const status = codexLaunch(['login', 'status', ...deepseekArgs({}, endpoint)]);
   const r = await run(status.file, status.args, deepseekHome(), 20_000, undefined, deepseekEnv());
   if (r.exit !== 0 || r.timedOut || r.error || !/API key/i.test(r.output)) {
     throw new Error('DeepSeek 还没登录，这件没有派出。请主人在终端运行 xagents login deepseek，按提示粘贴 DeepSeek 的 API 钥匙。');
@@ -63,10 +68,11 @@ export async function checkDeepseekLogin(run: Executor = execute) {
 // 主人自己登录 DeepSeek：钥匙从标准输入交给 Codex，由它存进 DeepSeek 的 Codex 文件夹；平台只转手，不存、不打印。
 export async function loginDeepseek(key: string) {
   key = key.trim();
-  if (!/^sk-[A-Za-z0-9_-]{8,}$/.test(key)) throw new Error('这不像 DeepSeek 的 API 钥匙（应以 sk- 开头），没有保存。');
+  if (key.length < 8 || key.length > 500 || /\s|[\u0000-\u001f\u007f]/u.test(key)) throw new Error('这不像可用的 API 钥匙（须为 8–500 个不含空白的字符），没有保存。');
   await mkdir(deepseekHome(), { recursive: true, mode: 0o700 });
+  const endpoint = await configuredDeepseek();
   const ok = await new Promise<boolean>((done, fail) => {
-    const login = codexLaunch(['login', '--with-api-key', ...DEEPSEEK_LOGIN]);
+    const login = codexLaunch(['login', '--with-api-key', ...deepseekArgs({}, endpoint)]);
     const child = spawn(login.file, login.args, { cwd: deepseekHome(), env: { ...externalEnvironment(), ...deepseekEnv() }, stdio: ['pipe', 'ignore', 'ignore'] });
     child.once('error', fail); child.once('close', code => done(code === 0));
     child.stdin.end(key + '\n');
@@ -124,6 +130,17 @@ export function windowsCodexPath(local: string, list: (dir: string) => string[] 
 export const codexPath = () => process.env.XAGENTS_CODEX || (isWindows
   ? windowsCodexPath(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'))
   : '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex');
+export const kimiPath = () => process.env.XAGENTS_KIMI || join(homedir(), '.kimi-code/bin/kimi');
+async function prepareKimiState(job: Pick<Job, 'id'>) {
+  const state = kimiStateDir(job), source = join(homedir(), '.kimi-code');
+  await mkdir(state, { recursive: true, mode: 0o700 });
+  for (const name of ['config.toml', 'credentials']) {
+    try { await cp(join(source, name), join(state, name), { recursive: true, force: false, errorOnExist: false }); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+  }
+  await mkdir(join(state, 'skills'), { recursive: true });
+  return state;
+}
 // XAGENTS_CODEX 指向 .cjs / .mjs 脚本（测试替身）时用 Node 来跑：Windows 上不能直接启动脚本文件。
 export function codexLaunch(args: string[]): { file: string; args: string[] } {
   const file = codexPath();
@@ -156,9 +173,11 @@ export async function command(job: Job, text: string, project: Isolated, runtime
     // 用户的 Codex 连的是哪个接口，原样带上（--ignore-user-config 会把它一起丢掉，接自定义接口的人就派不出活）。
     // 钥匙放在环境变量里的：只把配置里点名的那一个交给 Codex 主程序，并明写不给它跑的命令（docs/design-scan.md 规则二）。
     const endpoint = deepseek ? official : await codexEndpoint();
+    const deepseekConfig = deepseek ? await configuredDeepseek() : undefined;
     const hardened = !isWindows || await (await import('./selfcheck.ts')).windowsHardened();
     if (endpoint.envKey) pass = [endpoint.envKey];
-    args = ['exec', '--ignore-user-config', ...(isWindows ? (hardened ? WINDOWS_SANDBOX : WINDOWS_PLAIN) : []), ...disable.flatMap(n => ['--disable', n]), ...(deepseek ? deepseekArgs(env) : endpoint.args), '-c', codexEnvPolicy(deepseek ? KEY_VARS : pass), '-m', job.model, '-c', `model_reasoning_effort="${job.effort}"`, '-c', 'default_permissions="xa"', '-c', codexPermissions(job, project, tmp, network, undefined, !hardened), '-C', job.worktree, '--json', '-o', join(dir, 'final.md'), '-'];
+    const model = deepseekConfig ? (job.who === 'deepseek-flash' ? deepseekConfig.flashModel : deepseekConfig.proModel) : job.model;
+    args = ['exec', '--ignore-user-config', ...(isWindows ? (hardened ? WINDOWS_SANDBOX : WINDOWS_PLAIN) : []), ...disable.flatMap(n => ['--disable', n]), ...(deepseekConfig ? deepseekArgs(env, deepseekConfig) : endpoint.args), '-c', codexEnvPolicy(deepseek ? KEY_VARS : pass), '-m', model, '-c', `model_reasoning_effort="${job.effort}"`, '-c', 'default_permissions="xa"', '-c', codexPermissions(job, project, tmp, network, undefined, !hardened), '-C', job.worktree, '--json', '-o', join(dir, 'final.md'), '-'];
   } else {
     file = nodeRunner().file;
     // 替身模式仍传入完整参数；无需安装或执行真正的 srt。
@@ -171,6 +190,13 @@ export async function command(job: Job, text: string, project: Isolated, runtime
       // 不读写主人的记忆，不自动更新（~/.grok 对选手只读，更新也写不进去）。
       env.GROK_MEMORY = '0'; env.GROK_DISABLE_AUTOUPDATER = '1';
       args.push('grok', '--prompt-file', join(dir, 'prompt.md'), '--cwd', job.worktree, '-m', job.model, '--effort', job.effort, '--sandbox', 'off', '--always-approve', '--output-format', 'streaming-json');
+    } else if (isolationOf(job.who) === 'kimi') {
+      const state = await prepareKimiState(job);
+      env.KIMI_CODE_HOME = state;
+      env.KIMI_DISABLE_TELEMETRY = '1';
+      // macOS 沙箱禁止 FSEvents 套接字；改用轮询，技能目录也只看任务副本，不扫主人全局目录。
+      env.CHOKIDAR_USEPOLLING = '1';
+      args.push(kimiPath(), '--skills-dir', join(state, 'skills'), '--prompt', text, '--output-format', 'stream-json', '--model', job.model);
     } else {
       // 替身不是 cursor-agent，不受它的路径长度限制（测试的临时登记处路径很长）。
       const state = cursorState(process.env.XAGENTS_FAKE_WORKER ? cursorStateDir(job) : checkCursorState(cursorStateDir(job)));
@@ -214,8 +240,9 @@ export async function result(job: Job) {
 // 续接（群与小队共用）：准备阶段先按当前平台生成完整运行包，并确认旧约束没有减少；
 // 这里仅在这一轮新生成的 command 上改续接参数，不负责生成隔离规则。
 // Codex：codex exec resume <其余参数> <会话号> -（exec resume 不认 -C，去掉它；看管进程本来就在副本目录里启动）。
-// Grok：在 --prompt-file 前加 --resume <会话号>，提示词换成这一轮的文件。Cursor 还没实测续接，不支持。
-export const SESSION_RE = /^[0-9a-f][0-9a-f-]{7,63}$/i;
+// Grok：在 --prompt-file 前加 --resume <会话号>，提示词换成这一轮的文件。
+// Cursor：提示词已经是这一轮的新文字，只在它前面插入 --resume <会话号>（2026-10-18 探针）。
+export const SESSION_RE = /^(?:[0-9a-f][0-9a-f-]{7,63}|session_[0-9a-f-]{36})$/i;
 export const RESUME_PROMPT_RE = /^prompt-r([2-9]|[1-9][0-9])\.md$/;
 export function resumeCommand(job: Pick<Job, 'id' | 'who' | 'command' | 'session' | 'resume'>): Command {
   const cmd = job.command;
@@ -238,5 +265,18 @@ export function resumeCommand(job: Pick<Job, 'id' | 'who' | 'command' | 'session
     args.splice(p, 0, '--resume', job.session);
     return { ...cmd, args };
   }
-  throw new Error('Cursor 还没实测续接，暂时不能当搭档。');
+  if (isolation === 'kimi') {
+    const p = args.indexOf('--prompt');
+    if (p < 0 || args.includes('--session')) throw new Error('第 1 轮的 Kimi 命令不是预期的样子，没法续接。');
+    args.splice(p, 0, '--session', job.session);
+    return { ...cmd, args };
+  }
+  if (isolation === 'cursor') {
+    const agent = args.indexOf('cursor-agent');
+    const workspace = args.indexOf('--workspace');
+    if (agent < 0 || workspace < 0 || args.includes('--resume') || args.at(-1) === undefined) throw new Error('第 1 轮的 Cursor 命令不是预期的样子，没法续接。');
+    args.splice(args.length - 1, 0, '--resume', job.session);
+    return { ...cmd, args };
+  }
+  throw new Error('这位选手暂时不能续接。');
 }

@@ -163,7 +163,7 @@ export function shareView(previous: View | null, next: View): View {
     workers: JSON.stringify(previous.workers) === JSON.stringify(next.workers) ? previous.workers : next.workers
   };
 }
-export type Page = 'board' | 'collab' | 'history' | 'stats';
+export type Page = 'board' | 'plan' | 'collab' | 'history' | 'stats';
 export function loadPosition(): {
   page: Page;
   filter: string;
@@ -173,7 +173,7 @@ export function loadPosition(): {
     if (p && typeof p === 'object') {
       const v = p as Record<string, unknown>;
       return {
-        page: v.page === 'collab' || v.page === 'history' || v.page === 'stats' ? v.page : 'board',
+        page: v.page === 'plan' || v.page === 'collab' || v.page === 'history' || v.page === 'stats' ? v.page : 'board',
         filter: typeof v.filter === 'string' ? v.filter : '全部'
       };
     }

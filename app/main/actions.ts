@@ -3,6 +3,7 @@ import type { CreateChatOptions } from '../../src/core/chat.ts';
 import type { IpcMainInvokeEvent } from 'electron';
 import { safeName } from '../../src/core/paths.ts';
 import type { Settings, SettingsPatch } from '../shared/ipc.ts';
+import { deepseekEndpoint } from '../../src/core/deepseek-settings.ts';
 import { defaultColumns } from '../shared/ipc.ts';
 import { validateWorkersPatch } from '../../src/core/policy.ts';
 import { isAppearance, isQuotaStop, LIMIT_CAPS, slimDays } from '../../src/core/settings.ts';
@@ -78,6 +79,8 @@ export function settingsPatch(value: unknown): SettingsPatch {
       patch.limits = { maxRunning: maxRunning as number, quotaStop };
     } else if (key === 'workers') {
       patch.workers = validateWorkersPatch(v);
+    } else if (key === 'deepseek') {
+      patch.deepseek = deepseekEndpoint(v);
     } else if (key === 'columns') {
       if (!v || typeof v !== 'object' || Array.isArray(v) || Object.getPrototypeOf(v) !== Object.prototype) throw new Error('列颜色格式不对。');
       const columns: Record<string, string> = {};
@@ -189,6 +192,56 @@ export function quotaRefreshHandler(refresher: Pick<ReturnType<typeof quotaRefre
   return async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!trusted(event)) throw new Error('不允许的请求来源。');
     await refresher.refresh(args);
+  };
+}
+
+// 规划派发桥（docs/tasks/TASK-006.md）：白名单只认 project、taskId、who、ro。
+// 选手写成“选手:强度[:fast]”字符串交给核心解析；推荐执行者不进这条桥，核心也不认任何展示数据。
+const PLAN_KEYS = ['project', 'taskId', 'who', 'ro'] as const;
+export function planActions(core: {
+  dispatch(input: { project: string; taskId: string; who: string[]; ro?: boolean }): Promise<{ id: string }[]>;
+}) {
+  const pending = new Set<string>();
+  return async (args: unknown[]): Promise<string[]> => {
+    if (args.length !== 1) throw new Error('派发参数数量不对。');
+    const value = args[0];
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('派发参数格式不对。');
+    const raw = value as Record<string, unknown>;
+    for (const key of Object.keys(raw)) if (!(PLAN_KEYS as readonly string[]).includes(key)) throw new Error('派发参数里有不认识的字段。');
+    if (typeof raw.project !== 'string' || !raw.project) throw new Error('项目标识无效。');
+    const project = safeName(raw.project);
+    if (typeof raw.taskId !== 'string' || !/^TASK-\d{1,6}$/.test(raw.taskId)) throw new Error('任务编号无效，请从规划里选择。');
+    if (!Array.isArray(raw.who) || !raw.who.length || raw.who.length > 12 || !raw.who.every(choice => typeof choice === 'string' && choice.length > 0 && choice.length <= 100)) {
+      throw new Error('请从当前可用选手里选择一至多位。');
+    }
+    if (raw.ro !== undefined && typeof raw.ro !== 'boolean') throw new Error('读写权限只能是只读或读写。');
+    const key = `${project}:${raw.taskId}`;
+    if (pending.has(key)) throw new Error('这件任务正在派发，请稍等。');
+    pending.add(key);
+    try {
+      const jobs = await core.dispatch({ project, taskId: raw.taskId, who: raw.who as string[], ...(raw.ro === true ? { ro: true } : {}) });
+      return jobs.map(job => job.id);
+    } finally { pending.delete(key); }
+  };
+}
+
+// 打开 Task Spec 的桥（docs/tasks/TASK-006.md）：白名单只认 project、spec 两个字段。
+// 窗口在这里交不进路径——只交项目名和 TASK-005 解析出来的仓库内相对路径；绝对路径、`..`、别的文件名
+// 先在核心 specLinkProblem 那一关就被拒掉，再由主进程落到已登记仓库里解析成真实文件。
+const PLAN_SPEC_KEYS = ['project', 'spec'] as const;
+export function planSpecActions(core: {
+  open(input: { project: string; spec: string }): Promise<void>;
+}) {
+  return async (args: unknown[]): Promise<void> => {
+    if (args.length !== 1) throw new Error('打开 Task Spec 参数数量不对。');
+    const value = args[0];
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('打开 Task Spec 参数格式不对。');
+    const raw = value as Record<string, unknown>;
+    for (const key of Object.keys(raw)) if (!(PLAN_SPEC_KEYS as readonly string[]).includes(key)) throw new Error('打开 Task Spec 参数里有不认识的字段。');
+    if (typeof raw.project !== 'string' || !raw.project) throw new Error('项目标识无效。');
+    const project = safeName(raw.project);
+    if (typeof raw.spec !== 'string' || !raw.spec || [...raw.spec].length > 200) throw new Error('Task Spec 路径无效。');
+    await core.open({ project, spec: raw.spec });
   };
 }
 

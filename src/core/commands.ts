@@ -7,7 +7,7 @@ import { alive, hasCode, writeAtomic, removeTree } from './fsx.ts';
 import { jobDir } from './paths.ts';
 import { result } from './workers.ts';
 import { saveDiff, changedFiles, removeWorktree, worktreeMissing } from './worktree.ts';
-import { cursorStateDir, grokSessionDirs, jobTmpDir } from './sandbox.ts';
+import { cursorStateDir, grokSessionDirs, jobTmpDir, kimiStateDir } from './sandbox.ts';
 import { isolationOf } from './roster.ts';
 import { moveToTrash } from './trash.ts';
 import { killGroup, reconcileSafely } from './runner.ts';
@@ -56,6 +56,7 @@ export async function stop(id: string) {
       }
       // 看管进程被杀时选手可能仍在，不能只改一个状态字。
       killGroup(j.workerPid, 'SIGKILL', j.workerSince, undefined, until);
+      j.termination ??= 'manual'; // 主人 stop 的直停路径（看管已不在），和正常收到停止记号一样记 manual。
       finish(j, 'stopped');
     });
   }
@@ -73,6 +74,7 @@ export async function stop(id: string) {
         const until = leftBy(j);
         killGroup(j.setupPid, 'SIGKILL', j.setupSince, undefined, until);
         killGroup(j.workerPid, 'SIGKILL', j.workerSince, undefined, until);
+        j.termination ??= 'manual'; // Windows 看管卡住后的强停收尾也是主人 stop：记 manual，和 macOS 信号路径一致。
         finish(j, 'stopped');
       });
     }
@@ -127,6 +129,7 @@ export async function cleanJobs(jobs: Job[], report: (text: string) => void = ()
         if (remaining.length) await moveToTrash(remaining, `Grok会话-${j.id}`).catch(e => { note += `；没能把 Grok 会话文件夹移进废纸篓：${(e as Error).message}`; });
         delete j.pendingGrokSessions;
         await removeTree(cursorStateDir(j));
+        await removeTree(kimiStateDir(j));
         // 2026-09-30 之前的 Cursor 状态放在任务目录下。
         await removeTree(join(jobDir(j.id), 'cursor-state'));
         await removeTree(jobTmpDir(j));

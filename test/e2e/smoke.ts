@@ -105,7 +105,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.equal(preferences.contextIsolation, true); assert.equal(preferences.sandbox, true);
     assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
     assert.deepEqual(await page.evaluate(() => [typeof Reflect.get(window, 'require'), typeof Reflect.get(window, 'process'), typeof Reflect.get(window, '__xaE2E')]), ['undefined', 'undefined', 'undefined']);
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'projectChoose', 'projectRegister', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
     // 接入 AI：后台只认四个名字，别的一律拒绝，不碰任何文件。
     for (const bad of ['../../etc', 'CLAUDE', '']) assert.match(await page.evaluate(async ai => { try { await window.xa.connect(ai as never); return 'ok'; } catch (e) { return String(e); } }, bad), /只收一个 AI 名字/);
     assert.match(await page.evaluate(async () => { try { await window.xa.disconnect('x' as never); return 'ok'; } catch (e) { return String(e); } }), /只收一个 AI 名字/);
@@ -124,6 +124,9 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     await assert.rejects(page.evaluate(() => window.xa.decide('../outside', 'adopt')));
     await assert.rejects(page.evaluate(() => window.xa.redo('missing')));
     await assert.rejects(page.evaluate(() => window.xa.setSettings({ columns: { running: 'red' } })));
+    // 项目登记：窗口交不进仓库路径，伪造的令牌也登记不了；不会弹系统选择器。
+    await assert.rejects(page.evaluate(() => window.xa.projectRegister('伪造的令牌', { name: '项目' })), /失效/);
+    await assert.rejects(page.evaluate((id) => (window.xa.projectRegister as (...a: unknown[]) => Promise<unknown>)(id, { name: '项目', repo: '/etc' }), '伪造的令牌'), /不认识/);
     for (const [id, text] of [['../outside', '你好'], ['missing', '你好'], ['undecided', '   '], ['undecided', 'a\u0000b'], ['undecided', '文'.repeat(501)]]) {
       await assert.rejects(page.evaluate(([i, t]) => window.xa.comment(i, t), [id, text]), id + text.slice(0, 3));
     }

@@ -1,0 +1,15 @@
+{
+  "filesystem": {
+    "allowWrite": ["__WT__", "__KIMI_STATE__", "__TMP__"],
+    "denyWrite": ["/private/tmp/claude", "~/.npm/_logs"],
+    "denyRead": [
+      "~/.ssh", "~/.npmrc", "~/.codex", "~/.grok", "~/.cursor", "~/.aws", "~/.claude", "~/.config/gh",
+      "~/.kimi-code/config.toml", "~/.kimi-code/credentials", "~/.kimi-code/sessions", "~/.kimi-code/logs",
+      "~/Library/Keychains", "/Library/Keychains"
+    ]
+  },
+  "network": {
+    "allowedDomains": ["agent-gw.kimi.com", "api.kimi.com", "auth.kimi.com", "*.moonshot.ai", "*.moonshot.cn"],
+    "deniedDomains": []
+  }
+}

@@ -9,7 +9,7 @@ test('桥只开放白名单，不泄露 IPC 事件；取消订阅移除原监听
   expect(mock.expose.mock.calls[0][0]).toBe('xa');
   const bridge = mock.expose.mock.calls[0][1] as XaBridge;
   expect(Object.isFrozen(bridge)).toBe(true);
-  expect(Object.keys(bridge).sort()).toEqual(['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
+  expect(Object.keys(bridge).sort()).toEqual(['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectChoose', 'projectRegister', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
   await bridge.decide('x', 'drop'); expect(mock.invoke).toHaveBeenLastCalledWith(channels.decide, 'x', 'drop');
   await bridge.redo('x'); expect(mock.invoke).toHaveBeenLastCalledWith(channels.redo, 'x');
   await bridge.stop('x'); expect(mock.invoke).toHaveBeenLastCalledWith(channels.stop, 'x');
@@ -27,6 +27,9 @@ test('桥只开放白名单，不泄露 IPC 事件；取消订阅移除原监听
   expect(mock.invoke).toHaveBeenLastCalledWith(channels.modelsAdd, 'codex', 'custom-model', ['high'], true);
   await bridge.refreshQuota(); expect(mock.invoke).toHaveBeenLastCalledWith(channels.quotaRefresh);
   await bridge.setSettings({ notifications: false }); expect(mock.invoke).toHaveBeenLastCalledWith(channels.settingsSet, { notifications: false });
+  await bridge.deepseekLogin('relay-secret'); expect(mock.invoke).toHaveBeenLastCalledWith(channels.deepseekLogin, 'relay-secret');
+  await bridge.deepseekModels({ baseUrl: 'https://relay.test/v1/', wireApi: 'chat', proModel: 'pro', flashModel: 'flash', offPeakOnly: false }, 'relay-secret');
+  expect(mock.invoke).toHaveBeenLastCalledWith(channels.deepseekModels, { baseUrl: 'https://relay.test/v1/', wireApi: 'chat', proModel: 'pro', flashModel: 'flash', offPeakOnly: false }, 'relay-secret');
   await bridge.setNetworkAllowed(false); expect(mock.invoke).toHaveBeenLastCalledWith(channels.networkAllowed, false);
   await bridge.cliStatus(); expect(mock.invoke).toHaveBeenLastCalledWith(channels.cliStatus);
   await bridge.cliInstall(true); expect(mock.invoke).toHaveBeenLastCalledWith(channels.cliInstall, true);
@@ -38,6 +41,14 @@ test('桥只开放白名单，不泄露 IPC 事件；取消订阅移除原监听
   await bridge.updateDownload(); expect(mock.invoke).toHaveBeenLastCalledWith(channels.updateDownload);
   await bridge.updateRestart(); expect(mock.invoke).toHaveBeenLastCalledWith(channels.updateRestart);
   await bridge.setAutoUpdateCheck(false); expect(mock.invoke).toHaveBeenLastCalledWith(channels.setAutoUpdateCheck, false);
+  await bridge.projectChoose(); expect(mock.invoke).toHaveBeenLastCalledWith(channels.projectChoose);
+  await bridge.projectRegister('令牌', { name: '项目', label: '显示名' });
+  expect(mock.invoke).toHaveBeenLastCalledWith(channels.projectRegister, '令牌', { name: '项目', label: '显示名' });
+  // 规划两条：派发只转发一个选择对象；打开 Task Spec 只转发项目名和仓库内相对路径，窗口交不进别的路径。
+  await bridge.planDispatch({ project: '项目', taskId: 'TASK-006', who: ['codex:high'], ro: true });
+  expect(mock.invoke).toHaveBeenLastCalledWith(channels.planDispatch, { project: '项目', taskId: 'TASK-006', who: ['codex:high'], ro: true });
+  await bridge.planOpenSpec({ project: '项目', spec: 'docs/tasks/TASK-006.md' });
+  expect(mock.invoke).toHaveBeenLastCalledWith(channels.planSpec, { project: '项目', spec: 'docs/tasks/TASK-006.md' });
   // 多余参数也要交给后台拒绝，不能在预加载里悄悄吞掉。
   await (bridge.updateCheck as (...args: unknown[]) => Promise<unknown>)(1);
   expect(mock.invoke).toHaveBeenLastCalledWith(channels.updateCheck, 1);

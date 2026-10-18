@@ -64,6 +64,7 @@ test('设置窗口：焦点落在当前分页上、Esc 关闭；记得上次的�
   await screen.findByLabelText('系统通知');
   expect(document.activeElement).toBe(screen.getByRole('tab', { name: '通用' }));
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });   // 通用 → 项目 → 选手与模型
   expect(screen.getByRole('tab', { name: '选手与模型' }).getAttribute('aria-selected')).toBe('true');
   fireEvent.keyDown(document, { key: 'Escape' }); expect(close).toHaveBeenCalledOnce();
   first.unmount();

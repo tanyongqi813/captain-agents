@@ -1,6 +1,6 @@
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { readJson, writeJson, readOptional, writeAtomic, withLock, hasCode } from './fsx.ts';
-import { isWho, vendorOf, whos, spec } from './roster.ts';
+import { isWho } from './roster.ts';
 import { selection } from './workers.ts';
 import { checkChoice } from './policy.ts';
 import { readSettings } from './settings.ts';
@@ -146,7 +146,6 @@ export function chatMember(value: unknown): ChatMember {
   if (typeof value !== 'string' || value.length > 100) throw new Error('成员写法是 选手:强度[:fast][:ro]。');
   const readOnly = value.endsWith(':ro');
   const { who, effort, fast } = selection(readOnly ? value.slice(0, -3) : value);
-  if (vendorOf(who) === 'cursor') throw new Error('Cursor 还没有实测续接，暂时不能加入群聊。');
   return { who, effort, ...(fast ? { fast } : {}), ...(readOnly ? { readOnly: true } : {}) };
 }
 export function cleanChatText(text: unknown): string {

@@ -54,7 +54,7 @@ test('通道模板：内置号不变、新选手号规范化、隔离/图标/额
   assert.throws(() => specFor('codex', { ...fresh(), efforts: ['max'] as never[] }), /强度/);
 });
 
-test('装载原地更新所有派生清单，handle 去标点并避开内置/新增重名，重新装载可回到八位', () => {
+test('装载原地更新所有派生清单，handle 去标点并避开内置/新增重名，重新装载可回到内置清单', () => {
   const before = [roster, whos, workerDisplay, fastWhos, HANDLES];
   const entries = { ...extra('codex', fresh('gpt-6.1-sol', 'Grok')), ...extra('cursor', { ...fresh('gpt-6.1-sol', 'G r o k!'), fast: true }) };
   loadRoster(entries, ['grok']);
@@ -70,7 +70,7 @@ test('装载原地更新所有派生清单，handle 去标点并避开内置/新
   const display = structuredClone(workerDisplay);
   loadWorkerHandles({}); assert.equal(HANDLES['codex-6-1-sol'], undefined);
   loadWorkerHandles(display); assert.equal(HANDLES['codex-6-1-sol'], 'Grok2');
-  loadRoster(); assert.equal(whos.length, 8); assert.equal(HANDLES['codex-6-1-sol'], undefined);
+  loadRoster(); assert.equal(whos.length, builtinWhos.length); assert.equal(HANDLES['codex-6-1-sol'], undefined);
 });
 
 test('新模型的中文短名可被 @，与核心展示的 handle 一致', () => {
@@ -142,7 +142,7 @@ test('保留拒绝未知通道、错误/稀疏/重复模型列表、跨家模型
   await assert.rejects(keepModels('codex', ['gpt-luna']), /冲突/);
   await assert.rejects(keepModels('codex', ['gpt-a.b', 'gpt-a-b']), /冲突/);
   assert.ok(!(await readdir(c.home)).includes('config.json'));
-  for (const channel of ['codex', 'grok', 'cursor']) await keepModels(channel, []);
+  for (const channel of ['codex', 'grok', 'cursor', 'kimi']) await keepModels(channel, []);
   await keepModels('deepseek', ['deepseek-flash']);
   const before = await readFile(join(c.home, 'config.json'), 'utf8');
   await assert.rejects(keepModels('deepseek', []), /至少保留一位/);
@@ -374,7 +374,7 @@ test('手动模型不算下线，查询不误报不在名单；整份保存默�
   await keepModels('codex', ['gpt-6-astra']); assert.ok(!keptWhos.includes(who));
   await keepModels('codex', [model]); assert.ok(keptWhos.includes(who));
   // 手动项也是最后一位时，明确取消仍不能绕过至少保留一位的底线。
-  for (const channel of ['grok', 'cursor', 'deepseek']) await keepModels(channel, []);
+  for (const channel of ['grok', 'cursor', 'deepseek', 'kimi']) await keepModels(channel, []);
   await assert.rejects(keepModels('codex', [], [model]), /至少保留一位/);
 });
 

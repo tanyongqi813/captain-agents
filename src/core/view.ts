@@ -23,6 +23,8 @@ import { dashboard, ranges } from './dashboard.ts';
 import { listChats, readMessages, pendingForLead } from './chat.ts';
 import { teamTasks } from './team-tasks.ts';
 import type { View, ViewJob, ViewTeam, ViewChat } from './view-types.ts';
+import { readTaskPlan } from './task-plan.ts';
+import type { TaskPlan } from './task-plan.ts';
 
 // 只读取登记处；不修正任务、不查远程额度、不触发自检。
 export async function buildView(options: ListedOptions = {}): Promise<View> {
@@ -61,13 +63,25 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
   const listed = await listedProviders(options), endpoint = await codexEndpoint();
   const quota = await readQuotaCache(endpoint);
   const registered = (await readdir(p.projects).catch(error => { if (hasCode(error, 'ENOENT')) return []; throw error; })).filter(n => n.endsWith('.json')).map(n => n.slice(0, -5));
-  const labels = new Map<string, string>();
+  const labels = new Map<string, string>(), repos = new Map<string, string>();
   for (const name of registered) {
-    try { const raw = await readOptional(join(p.projects, `${name}.json`)); const label = raw.trim() ? (JSON.parse(raw) as { label?: unknown }).label : undefined; if (typeof label === 'string' && label.trim()) labels.set(name, label.trim()); }
-    catch { /* 坏的登记文件：显示名退回项目名 */ }
+    try { const raw = await readOptional(join(p.projects, `${name}.json`)); const parsed = raw.trim() ? JSON.parse(raw) as { label?: unknown; repo?: unknown } : {};
+    if (typeof parsed.label === 'string' && parsed.label.trim()) labels.set(name, parsed.label.trim());
+    if (typeof parsed.repo === 'string' && parsed.repo) repos.set(name, parsed.repo); }
+    catch { /* 坏的登记文件：显示名退回项目名，路径不显示 */ }
   }
   const projectNames = [...new Set([...registered, ...jobs.map(job => job.project).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   const archived = new Set(archivedProjects);
+  // 任务规划：只对已登记且有仓库路径的项目做只读识别；单个项目损坏只体现在它自己的诊断里，不拖垮整份视图。
+  const plans: Record<string, TaskPlan> = {};
+  for (const name of registered) {
+    const repo = repos.get(name);
+    if (!repo) continue;
+    plans[name] = await readTaskPlan({ name, repo }).catch((error: unknown) => ({
+      present: true, project: name, tasks: [], ready: [],
+      diagnostics: [{ level: 'error' as const, message: `读取任务规划失败：${error instanceof Error ? error.message : String(error)}` }],
+    }));
+  }
   const slimmed = jobs.filter(job => job.slimmed);
   return { settings: { keepAwake, notifications, storage, limits, workers: policy },
     dashboard: ranges.flatMap(range => ['', ...projectNames].map(project => dashboard(jobs, range, project))),
@@ -75,7 +89,7 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
     updated: new Date().toISOString(), selfcheck: await readSelfcheck(),
     unlisted: unlistedProviders(listed),
     roster: keptWhos.filter(who => listedWho(listed, who)).map(who => ({ who, name: spec(who).name, model: spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })),
-    stats: stats(jobs), profiles: profiles(jobs), quota: boardQuota(quota).filter(p => listed.some(l => l.icon === p.icon && l.reason === null) && !(p.icon === 'codex' && endpoint.custom)), quotaAt: quota?.queriedAt ?? null, workers: { ...workers }, projects: projectNames.map(name => ({ name, label: labels.get(name) ?? name, archived: archived.has(name) })), jobs: rows, batches,
+    stats: stats(jobs), profiles: profiles(jobs), quota: boardQuota(quota).filter(p => listed.some(l => l.icon === p.icon && l.reason === null) && !(p.icon === 'codex' && endpoint.custom)), quotaAt: quota?.queriedAt ?? null, workers: { ...workers }, projects: projectNames.map(name => ({ name, label: labels.get(name) ?? name, repo: repos.get(name), archived: archived.has(name) })), plans, jobs: rows, batches,
     teams: await viewTeams(),
     chats,
     models,
@@ -96,6 +110,8 @@ function publicJob(job: Job, typical: number | null): ViewJob {
       skipped: job.realCheck.skipped ?? null } : null,
     rating: rating ? { ...(rating.score === undefined ? {} : { score: rating.score }), ...(rating.good ? { good: rating.good } : {}), ...(rating.improve ? { improve: rating.improve } : {}),
       ...(rating.external ? { external: rating.external } : {}), at: rating.at, tags: rating.tags.map(tag => ({ tag, kind: tagKind(tag) })) } : null,
+    plan: job.plan ? { taskId: job.plan.taskId, spec: job.plan.spec } : null,
+    termination: job.termination ?? null,
     activity: job.activity ?? [], timing: job.timing ?? null };
 }
 

@@ -5,6 +5,7 @@ import { App } from '../../app/renderer/App.tsx';
 import { QuotaRing, Segmented, StatusCluster } from '../../app/renderer/ui/index.ts';
 import type { View } from '../../src/core/view-types.ts';
 import { fixtureBridge, fixtureJob, fixtureView } from './fixtures.tsx';
+import { loadPosition } from '../../app/renderer/lib/board.ts';
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 
@@ -72,7 +73,7 @@ test('StatusCluster：三家一个环加一个自检圆点，整块是按钮，�
   const open = vi.fn();
   render(<StatusCluster quota={quota} selfcheck={{ ok: true, at: null, note: '目录外写都被挡住' }} onOpen={open} />);
   const button = screen.getByRole('button', { name: /各家额度/ });
-  expect(within(button).getAllByRole('img').map(x => x.getAttribute('aria-label'))).toEqual(['Codex：周额度 31%', 'Grok：查不到额度', 'Cursor：其他模型池 96%', '隔离正常']);
+  expect(within(button).getAllByRole('img').map(x => x.getAttribute('aria-label'))).toEqual(['Codex：周额度已用 31%', 'Grok：查不到额度', 'Cursor：其他模型池已用 96%', '隔离正常']);
   expect(within(button).getByRole('img', { name: 'Grok：查不到额度' }).hasAttribute('data-empty')).toBe(true);
   expect(within(button).getByRole('img', { name: /^Cursor/ }).getAttribute('data-level')).toBe('bad');
   fireEvent.click(button); expect(open).toHaveBeenCalledTimes(1);
@@ -94,11 +95,11 @@ const app = (jobs: ReturnType<typeof fixtureJob>[], extra: Partial<View> = {}) =
   window.xa = fixtureBridge({ getView: vi.fn(async () => v) });
   return render(<App />);
 };
-test('顶栏：分段“看板 协作 历史 表现”，没有品牌字，没有“在跑”和“件等你”；看板不带件数角标', async () => {
+test('顶栏：分段“看板 规划 协作 历史 表现”，没有品牌字，没有“在跑”和“件等你”；看板不带件数角标', async () => {
   const { container } = app([fixtureJob('run', { state: 'running', seconds: null }), fixtureJob('wait', { state: 'done' }), fixtureJob('used', { state: 'done', decision: { kind: 'adopt', by: 'lead', at: '' } })]);
   await screen.findByRole('tablist');
   const top = container.querySelector('header.top') as HTMLElement;
-  expect([...top.querySelectorAll('[role=tab]')].map(t => t.textContent)).toEqual(['看板', '协作', '历史', '表现']);
+  expect([...top.querySelectorAll('[role=tab]')].map(t => t.textContent)).toEqual(['看板', '规划', '协作', '历史', '表现']);
   expect(top.textContent).not.toContain('派活工作台'); expect(top.textContent).not.toContain('在跑'); expect(top.textContent).not.toContain('件等你'); expect(top.textContent).not.toContain('等你处理'); expect(top.textContent).not.toContain('隔离');
   expect(screen.getByRole('tab', { name: '看板' }).title).toBe('看板（⌘1）');
   expect(screen.getByTestId('attention').textContent).toBe('1');
@@ -118,10 +119,23 @@ test('顶栏：点分段切页（各家表现的页面标题不变），点状�
   await screen.findByRole('heading', { name: '历史' }); expect(screen.getByRole('tab', { name: '历史' }).getAttribute('aria-selected')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: /各家额度/ }));
   await screen.findByRole('heading', { name: '表现', level: 1 }); expect(screen.getByRole('tab', { name: '表现' }).getAttribute('aria-selected')).toBe('true');
-  expect(screen.getByRole('tab', { name: '表现' }).title).toBe('各家表现（⌘4）');
+  expect(screen.getByRole('tab', { name: '表现' }).title).toBe('各家表现（⌘5）');
   fireEvent.keyDown(document, { key: '1', metaKey: true });
   expect(screen.getByRole('tab', { name: '看板' }).getAttribute('aria-selected')).toBe('true');
 });
+test('顶栏：点“规划”或用 ⌘2 都进规划页，当前页记在本机（刷新后恢复）', async () => {
+  app([]);
+  fireEvent.click(await screen.findByRole('tab', { name: '规划' }));
+  await screen.findByText('还没有带任务规划的项目');
+  expect(screen.getByRole('tab', { name: '规划' }).getAttribute('aria-selected')).toBe('true');
+  expect(loadPosition()).toEqual({ page: 'plan', filter: '全部' });
+  fireEvent.keyDown(document, { key: '1', metaKey: true });
+  expect(screen.getByRole('tab', { name: '看板' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.keyDown(document, { key: '2', metaKey: true });
+  expect(screen.getByRole('tab', { name: '规划' }).getAttribute('aria-selected')).toBe('true');
+  expect(loadPosition().page).toBe('plan');
+});
+
 test('顶栏：设置按钮打开设置', async () => {
   app([]);
   fireEvent.click(await screen.findByRole('button', { name: '设置' }));

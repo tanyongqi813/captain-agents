@@ -88,7 +88,7 @@ test('建群拒绝：未登记、归档、成员数量/重复/语法/续接/强�
   await assert.rejects(createChat({ project: 'missing', members: ['grok:high'] }), /没有登记/);
   await c.add();
   const newChat = (members: string[]) => createChat({ project: '测试', members });
-  for (const members of [[], Array(7).fill('grok:high'), ['grok:high', 'grok:medium'], ['cursor-grok:high'], ['codex:max'], ['grok:high:ro:fast'], ['deepseek:high:fast'], ['unknown:high']]) await assert.rejects(newChat(members));
+  for (const members of [[], Array(7).fill('grok:high'), ['grok:high', 'grok:medium'], ['cursor-sonnet:high:fast'], ['codex:max'], ['grok:high:ro:fast'], ['deepseek:high:fast'], ['unknown:high']]) await assert.rejects(newChat(members));
   await assert.rejects(createChat({ project: '测试', members: ['grok:high'], hopLimit: 0 }), /正整数/);
   await assert.rejects(createChat({ project: '测试', members: ['grok:high'], title: 'x'.repeat(101) }), /群名/);
   await writeFile(join(c.home, 'config.json'), JSON.stringify({ archivedProjects: ['测试'] }));
@@ -107,6 +107,24 @@ test('建群拒绝：未登记、归档、成员数量/重复/语法/续接/强�
   await assert.rejects(newChat(['grok:high']), /准备副本失败/);
   assert.deepEqual(await listChats(), []);
   assert.equal(await c.git(['branch', '--list', 'xa/chat-*']), '');
+});
+
+test('Cursor 可以进群：可写、只读、快速版；关掉或没有快速版仍拒绝', async t => {
+  const c = await chatContext(t, true);
+  await c.add();
+  const mixed = await createChat({ project: '测试', members: ['cursor-grok:high', 'cursor-opus:high:ro'] });
+  assert.equal(mixed.members[0].who, 'cursor-grok');
+  assert.equal(mixed.members[0].readOnly, undefined);
+  assert.equal(mixed.members[1].who, 'cursor-opus');
+  assert.equal(mixed.members[1].readOnly, true);
+  const quick = await createChat({ project: '测试', members: ['cursor-grok:medium:fast'] });
+  assert.equal(quick.members[0].fast, true);
+  assert.equal(quick.members[0].effort, 'medium');
+  await assert.rejects(createChat({ project: '测试', members: ['cursor-sonnet:high:fast'] }));
+  const policy = effectiveWorkers({});
+  policy['cursor-grok'].enabled = false;
+  await writeFile(join(c.home, 'config.json'), JSON.stringify({ workers: policy }));
+  await assert.rejects(createChat({ project: '测试', members: ['cursor-grok:high'] }), /主人/);
 });
 
 test('改群名：去掉首尾空白，只改名字；空的、太长、带控制字符的拒绝；找不到给中文错误', async t => {

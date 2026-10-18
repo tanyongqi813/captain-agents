@@ -57,8 +57,12 @@ test('models CLI 用实时查询替身，输出三家结果，不改模型设置
 });
 
 test('Codex 用与派活相同的路径（不在 PATH 上）；真实样本里的当前模型能核对，Grok、Cursor 真实列表也行', async t => {
-  const old = process.env.XAGENTS_CODEX; delete process.env.XAGENTS_CODEX;
-  t.after(() => { if (old === undefined) delete process.env.XAGENTS_CODEX; else process.env.XAGENTS_CODEX = old; });
+  const c = await context(t, false), old = process.env.XAGENTS_CODEX, oldHome = process.env.XAGENTS_HOME;
+  delete process.env.XAGENTS_CODEX; process.env.XAGENTS_HOME = c.home;
+  t.after(() => {
+    if (old === undefined) delete process.env.XAGENTS_CODEX; else process.env.XAGENTS_CODEX = old;
+    if (oldHome === undefined) delete process.env.XAGENTS_HOME; else process.env.XAGENTS_HOME = oldHome;
+  });
   const files: string[] = [];
   const run = () => queryModels(async cmd => {
     files.push(cmd.file);

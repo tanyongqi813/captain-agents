@@ -22,7 +22,7 @@ const archive = (label: string) => {
   fireEvent.click(screen.getByRole('button', { name: `更多操作：${label}` }));
   fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
 };
-const toHistory = async () => { await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '3', metaKey: true }); await screen.findByRole('tablist', { name: '项目' }); };
+const toHistory = async () => { await screen.findByRole('tablist', { name: '页面' }); fireEvent.keyDown(document, { key: '4', metaKey: true }); await screen.findByRole('tablist', { name: '项目' }); };
 const rail = () => within(screen.getByRole('tablist', { name: '项目' })).getAllByRole('tab').map(t => [t.querySelector('.sidenav-label')!.textContent, t.querySelector('.sidenav-badge')!.textContent, t.querySelector('.sidenav-note')!.textContent]);
 const rowTitles = () => [...document.querySelectorAll('.hsum .ellip')].map(e => e.textContent);
 function twoProjects() {

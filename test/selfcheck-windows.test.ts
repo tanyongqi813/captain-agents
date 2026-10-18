@@ -16,7 +16,7 @@ const passing = (): IsolationResult[] => [{ isolation: 'codex', probes: windowsE
 
 test('Windows 上只开放 Codex 这一路的隔离；别的选手派活时直接拒绝，写明原因', () => {
   assert.deepEqual(platformIsolations(true), ['codex']);
-  assert.deepEqual(platformIsolations(false).sort(), ['codex', 'cursor', 'grok']);
+  assert.deepEqual(platformIsolations(false).sort(), ['codex', 'cursor', 'grok', 'kimi']);
   assert.equal(platformRefusal('codex', true), null);
   for (const isolation of ['grok', 'cursor'] as const) {
     assert.match(platformRefusal(isolation, true)!, /还没有在 Windows 上实测过，Windows 上暂时不能派/);
@@ -30,11 +30,11 @@ test('Windows 的探针清单：macOS 上每一类都有对应，另加身份、
   const names = windowsExpectedProbes();
   assert.equal(new Set(names).size, names.length, '不能有重名');
   for (const name of ['worktree', 'tmpdir', 'hardlink', 'home', 'chrome', 'listener', 'internet', 'ssh', 'npmrc', 'shell-files', 'credential-files', 'env-secret',
-    'login-codex', 'login-grok', 'login-cursor', 'login-deepseek', 'keychain', 'keychain-user', 'keychain-system', ...globalTargets.map(t => t.name)]) assert.ok(names.includes(name), name);
+    'login-codex', 'login-grok', 'login-cursor', 'login-kimi', 'login-deepseek', 'keychain', 'keychain-user', 'keychain-system', ...globalTargets.map(t => t.name)]) assert.ok(names.includes(name), name);
   for (const name of ['account', 'listen', 'pipe', 'startup-folder', 'powershell-profile', 'powershell-profile-5', 'codex-install', ...windowsTempTargets.map(t => t.name)]) assert.ok(names.includes(name), name);
   assert.deepEqual(expectedProbes('codex', true), names);
   const labels = windowsLabels();
-  for (const name of names) if (!['worktree', 'tmpdir', 'hardlink', 'home', 'chrome', 'listener', 'internet', 'ssh', 'npmrc', 'shell-files', 'credential-files', 'env-secret', 'login-codex', 'login-grok', 'login-cursor', 'login-deepseek'].includes(name)) assert.ok(labels[name], `${name} 要有给人看的名字`);
+  for (const name of names) if (!['worktree', 'tmpdir', 'hardlink', 'home', 'chrome', 'listener', 'internet', 'ssh', 'npmrc', 'shell-files', 'credential-files', 'env-secret', 'login-codex', 'login-grok', 'login-cursor', 'login-kimi', 'login-deepseek'].includes(name)) assert.ok(labels[name], `${name} 要有给人看的名字`);
   assert.ok(windowsGlobalTargets().every(t => !/^([a-z]:|[\\/])/i.test(t.path)), '都是相对家目录的位置');
 });
 

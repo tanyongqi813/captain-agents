@@ -16,6 +16,7 @@ const percent = (v: unknown) => numeric(v) && v >= 0 && v <= 100 ? v : null;
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {};
 export function quotaUsed(snapshot: unknown, who: Who): number | null {
   if (vendorOf(who) !== isolationOf(who)) return null; // DeepSeek 不占 Codex 的额度
+  if (isolationOf(who) === 'kimi') return null; // Kimi Code CLI 暂无安全的额度查询接口。
   const s = object(object(snapshot)[isolationOf(who)]);
   if (isolationOf(who) === 'codex') return percent(object(s.secondary).used_percent ?? object(object(s.rate_limits).secondary).used_percent);
   if (isolationOf(who) === 'grok') return percent(object(s.config).creditUsagePercent ?? s.creditUsagePercent ?? s.usedPercent);

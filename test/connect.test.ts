@@ -24,6 +24,15 @@ async function setup(t: TestContext, installed = true) {
   return { ...c, cli, home, trash, codex, claude, options, state, backups };
 }
 
+test('常驻规则接入任务台账：有 docs/TASK_LIST.md 时先读台账和当前 spec，推荐执行者不绑定选手、不自动执行全部任务', () => {
+  assert.match(LEAD_RULE, /`docs\/TASK_LIST\.md`/);
+  assert.match(LEAD_RULE, /Task Spec/);
+  assert.match(LEAD_RULE, /范围、约束和验收以 spec 为准/);
+  assert.match(LEAD_RULE, /只做状态允许且依赖已满足的任务/);
+  assert.match(LEAD_RULE, /“推荐执行者”只是参考/);
+  assert.match(LEAD_RULE, /台账存在不等于把任务全做掉/);
+});
+
 test('各家状态、Claude 更新、Grok 共用，不读其他配置', async t => {
   const c = await setup(t, false);
   assert.deepEqual((await connectStatus(c.options)).map(s => s.state), ['missing', 'missing', 'missing', 'missing', 'missing']);
@@ -31,7 +40,7 @@ test('各家状态、Claude 更新、Grok 共用，不读其他配置', async t 
   await assert.rejects(connect('codex', c.options), /这台电脑上没找到 Codex/);
   for (const ai of CONNECT_AIS) await fs.mkdir(join(c.home, `.${ai}`));
   assert.deepEqual((await connectStatus(c.options)).map(s => s.state), ['off', 'off', 'off', 'off', 'off']);
-  assert.deepEqual((await connectStatus(c.options)).map(s => s.name), ['Claude', 'Codex', 'Grok', 'Cursor', 'DeepSeek Harness']);
+  assert.deepEqual((await connectStatus(c.options)).map(s => s.name), ['Codex', 'Claude', 'Grok', 'Cursor', 'DeepSeek Harness']);
   assert.deepEqual((await c.state('cursor')).files, ['~/.cursor/rules/xagents.mdc']);
   assert.equal((await c.state('grok')).sharedWith, 'claude');
   assert.equal((await c.state('grok')).note, '和 Claude 共用一份规矩');
@@ -50,7 +59,7 @@ test('Grok 接入、撤下都报共用的原话；未知名字拒绝', async t =
   const c = await setup(t);
   for (const action of [connect, disconnect]) {
     await assert.rejects(action('grok', c.options), { message: 'Grok 和 Claude 共用 ~/.claude/rules/xagents.md，请在 Claude 那一行接入或撤下（xagents connect claude）' });
-    await assert.rejects(action('bad' as 'codex', c.options), /claude、codex、grok、cursor/);
+    await assert.rejects(action('bad' as 'codex', c.options), /codex、claude、grok、cursor、dsh/);
   }
 });
 
@@ -209,9 +218,9 @@ test('CLI 列出各家、接入、撤下、备份位置、错误参数；guide �
   assert.equal(undone.code, 0, undone.stderr); assert.match(undone.stdout, /Codex：还没接入.*已撤下.*原文件在废纸篓的“派活工作台-接入备份-codex 2”里/);
   assert.equal(await fs.readFile(c.codex, 'utf8'), '原文\n');
   for (const args of [['bad'], ['codex', 'claude'], ['--undo'], ['codex', '--bad']]) assert.equal((await c.cli(['connect', ...args])).code, 1);
-  assert.match((await c.cli(['connect', 'bad'])).stderr, /claude、codex、grok、cursor/);
+  assert.match((await c.cli(['connect', 'bad'])).stderr, /codex、claude、grok、cursor、dsh/);
   assert.match((await c.cli(['--help'])).stdout, /xagents connect/);
-  const guide = await c.cli(['guide']); assert.equal(guide.code, 0, guide.stderr); assert.match(guide.stdout, /接入的 AI：Claude 还没接入；Codex 还没接入；Grok 和 Claude 共用；Cursor 还没接入；DeepSeek Harness 还没接入/);
+  const guide = await c.cli(['guide']); assert.equal(guide.code, 0, guide.stderr); assert.match(guide.stdout, /接入的 AI：Codex 还没接入；Claude 还没接入；Grok 和 Claude 共用；Cursor 还没接入；DeepSeek Harness 还没接入/);
   const fakeHome = join(c.temp, '不是目录'); await fs.writeFile(fakeHome, '');
   const failedRead = await c.cli(['guide'], { HOME: fakeHome, USERPROFILE: fakeHome });
   assert.equal(failedRead.code, 0, failedRead.stderr);

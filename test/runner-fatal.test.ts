@@ -40,6 +40,7 @@ test('看管进程异常或未处理拒绝时先杀选手组，记录失败并�
     assert.equal(run.code, 1, run.stderr);
     const job = JSON.parse(await readFile(join(dir, 'job.json'), 'utf8'));
     assert.equal(job.state, 'failed');
+    assert.equal(job.termination, 'process_error', '看管异常记成 process_error');
     assert.match(job.error, kind === 'exception' ? /看管进程未捕获异常：测试异常/ : /看管进程未处理拒绝：测试拒绝/);
     const grandchild = Number(await readFile(join(dir, 'grandchild.pid'), 'utf8'));
     await until(async () => !alive(job.workerPid) && !alive(grandchild));

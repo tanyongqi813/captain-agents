@@ -56,6 +56,11 @@ export const fixtureView = (): View => ({
       icon: 'cursor',
       badge: 'claude'
     },
+    kimi: {
+      name: 'Kimi Code',
+      model: 'K2.8 Preview',
+      icon: 'kimi'
+    },
     deepseek: {
       name: 'DeepSeek',
       model: '模型',
@@ -68,6 +73,7 @@ export const fixtureView = (): View => ({
     }
   },
   projects: [],
+  plans: {},
   jobs: [],
   batches: [],
   teams: [],
@@ -99,6 +105,8 @@ export const fixtureJob = (id: string, extra: Partial<ViewJob> = {}): ViewJob =>
   decision: null,
   realCheck: null,
   rating: null,
+  plan: null,
+  termination: null,
   activity: [],
   ...extra
 });
@@ -126,6 +134,13 @@ export const fixtureBridge = (extra: Partial<XaBridge> = {}): XaBridge => ({
   modelsRefresh: vi.fn(async () => {}), modelsKeep: vi.fn(async () => {}), modelsAdd: vi.fn(async () => {}),
   getSettings: vi.fn(async () => ({ keepAwake: true, notifications: true, appearance: 'system' as const, openAtLogin: false, storage: { slim: true, days: 14 as const }, limits: { maxRunning: 12, quotaStop: 80 as const }, workers: structuredClone(workerPolicies), networkAllowed: false })),
   setSettings: vi.fn(async patch => ({ keepAwake: true, notifications: true, appearance: 'system' as const, openAtLogin: false, storage: { slim: true, days: 14 as const }, limits: { maxRunning: 12, quotaStop: 80 as const }, networkAllowed: false, ...patch, workers: { ...structuredClone(workerPolicies), ...patch.workers } })),
+  deepseekLogin: vi.fn(async () => {}),
+  deepseekModels: vi.fn(async () => ['deepseek-chat', 'deepseek-reasoner']),
   setNetworkAllowed: vi.fn(async () => { throw new Error('测试没有准备联网保存'); }),
-  onOpen: () => () => {}, getView: vi.fn(async () => fixtureView()), onView: () => () => {}, ...extra,
+  onOpen: () => () => {}, getView: vi.fn(async () => fixtureView()), onView: () => () => {},
+  projectChoose: vi.fn(async () => null),
+  projectRegister: vi.fn(async () => { throw new Error('测试没有准备项目登记'); }),
+  planDispatch: vi.fn(async () => { throw new Error('测试没有准备规划派发'); }),
+  planOpenSpec: vi.fn(async () => { throw new Error('测试没有准备打开 Task Spec'); }),
+  ...extra,
 });

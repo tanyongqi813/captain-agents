@@ -7,6 +7,7 @@ import type { WorkersPolicy } from './policy.ts';
 import type { Limits, Storage } from './settings.ts';
 import type { DashboardSlice } from './dashboard.ts';
 import type { ChannelMessage, ReviewItem, TeamPhase, TeamReason, TeamState } from './team.ts';
+import type { TaskPlan } from './task-plan.ts';
 
 export type Column = 'running' | 'attention' | 'done';
 // 负责人打的分（只带当前这一版，不带改分前的历史）；标签的好坏由核心分好（src/core/profiles.ts），界面不自己分。
@@ -27,6 +28,10 @@ export type ViewJob = Pick<Job, 'id' | 'batch' | 'project' | 'who' | 'model' | '
   network: boolean;
   realCheck: { needed: boolean; steps: string[]; result: { ok: boolean; note: string; at: string; shotCount: number } | null; skipped: { reason: string; at: string } | null } | null;
   rating: ViewRating | null;
+  // 任务台账追溯（docs/tasks/TASK-006.md）：从规划派发的活有 Task ID 和 spec 路径；别的活是 null。
+  plan: { taskId: string; spec: string } | null;
+  // 收尾原因（docs/tasks/TASK-008.md）：手动停、停滞、总超时、看管异常；旧记录没有这一字段，界面显示成 null。
+  termination: 'manual' | 'stalled' | 'timed_out' | 'process_error' | null;
   activity: Activity[];
   // 每一步的时间；老任务没有记录时为 null。给人看的话用 src/core/duration.ts 的 describeTiming。
   timing: Timing | null;
@@ -34,7 +39,7 @@ export type ViewJob = Pick<Job, 'id' | 'batch' | 'project' | 'who' | 'model' | '
 // 设置“选手与模型 → 管理模型”用的数据（docs/design-models.md）。每个通道一组；models = 最近发现的名单 ∪ 这个通道已有的选手。
 // kept：主人保留着（会出现在选手表里）；builtin：内置选手；fresh：主人上次保存选择之后新冒出来的（标“新”）；
 // manual：手动添加；gone：保留着、但最近一次成功问到的名单里已经没有（手动添加的免查）。discoverable：这个通道会不会自动发现（DeepSeek 不会）。
-export type ModelChannel = 'codex' | 'grok' | 'cursor' | 'deepseek';
+export type ModelChannel = 'codex' | 'grok' | 'cursor' | 'kimi' | 'deepseek';
 export type ViewModel = {
   model: string; who: Who; shown: string; description: string | null; efforts: Effort[]; fast: boolean;
   kept: boolean; builtin: boolean; manual: boolean; fresh: boolean; gone: boolean;
@@ -101,8 +106,12 @@ export type View = {
   profiles: Profile[];
   workers: Record<Who, { name: string; model: string; icon: string; badge?: string }>;
   // 项目名单：登记处里的项目，加上任务里出现过但没登记的；label 是给人看的名字（现在就是项目名）。
+  // repo 只有登记过的项目有（从登记文件读）；只在任务里出现过的项目没有这一字段，界面不显示路径行。
   // archived：主人归档了这个项目（设置里的 archivedProjects）；已完成列和历史页的“全部”不再显示它，在跑、在验收的照常显示。
-  projects: { name: string; label: string; archived: boolean }[];
+  projects: { name: string; label: string; repo?: string; archived: boolean }[];
+  // 每个已登记项目的任务规划（docs/TASK_LIST.md 识别结果，src/core/task-plan.ts），key 是项目名。
+  // 没有台账的项目是 { present: false }；某个项目规划损坏只反映在它自己的 diagnostics 里，不拖垮看板。
+  plans: Record<string, TaskPlan>;
   jobs: ViewJob[];
   batches: Batch[];
   teams: ViewTeam[];

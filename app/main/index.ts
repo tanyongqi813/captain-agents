@@ -1,8 +1,9 @@
 import { refreshModelsWithBaseline, readModelsCache } from '../../src/core/models.ts';
 import { modelsRefresher, modelsRefreshHandler, modelsKeepHandler, modelsAddHandler, modelsScheduler } from './models.ts';
-import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, nativeTheme, protocol, screen, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, nativeTheme, net, protocol, screen, session, shell } from 'electron';
 import { connect, connectArgument, connectStatus, disconnect } from '../../src/core/connect.ts';
 import { INTRO_TEXT } from '../../src/core/intro.ts';
+import { realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { desktopPath, paths } from '../../src/core/paths.ts';
@@ -20,24 +21,66 @@ import { queryQuota, readQuotaCache } from '../../src/core/quota.ts';
 import type { View } from '../../src/core/view-types.ts';
 import type { Destination, CliStatus } from '../shared/ipc.ts';
 import { applyAppearance, syncBackground, titleBarOverlay, windowBackground } from './appearance.ts';
-import { jobActions, quotaRefreshHandler, quotaRefresher, settingsActions, teamActions, chatActions } from './actions.ts';
+import { jobActions, quotaRefreshHandler, quotaRefresher, settingsActions, teamActions, chatActions, planActions, planSpecActions } from './actions.ts';
 import { noticeTitle, notificationTracker } from './notifications.ts';
 import type { Notice } from './notifications.ts';
 import { createTray } from './tray.ts';
 import { readIcon } from './icons.ts';
-import { migrateIcons } from '../../src/core/icons.ts';
+import { installIcons } from '../../src/core/icons.ts';
 import { httpsLink, securePreferences, secureSession, trustedSender } from './security.ts';
 import { loadBounds, saveBounds } from './window-state.ts';
 import { watchRegistry } from './watch.ts';
 import { startDesktop } from './startup.ts';
 import { slimScheduler } from './slim.ts';
 import { slimOld } from '../../src/core/slim.ts';
+import { loginDeepseek } from '../../src/core/workers.ts';
+import { queryDeepseekModels } from '../../src/core/deepseek-models.ts';
 // Electron 自带的“原始文件函数”：不把路径里的 .asar 当虚拟目录（更新包里有 app.asar，见 update-install.ts）。
 import originalFs from 'original-fs';
 import { desktopUpdater } from './update-runtime.ts';
 import { cliLauncherStatus, installCliLauncher, refreshCliLauncher } from './cli-launcher.ts';
 import { updateActions } from './updater.ts';
 import type { Updater } from './updater.ts';
+import { addProject } from '../../src/core/project.ts';
+import { checkProject } from '../../src/core/project-check.ts';
+import { git } from '../../src/core/worktree.ts';
+import { projectActions, projectSelections } from './project-bridge.ts';
+import { planDispatch } from '../../src/core/plan-dispatch.ts';
+import { resolveTaskSpec } from '../../src/core/task-plan.ts';
+
+// `net.fetch` may collapse proxy/TLS failures into a bare `TypeError: fetch failed`.
+// ClientRequest still honours the system proxy and exposes the actual network error.
+const electronRequest: typeof fetch = ((input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+  const rawHeaders = init?.headers && !Array.isArray(init.headers) && !(init.headers instanceof Headers)
+    ? init.headers as Record<string, string>
+    : Object.fromEntries(new Headers(init?.headers).entries());
+  const request = net.request({ url: String(input), method: init?.method ?? 'GET', headers: rawHeaders, redirect: 'error', credentials: 'omit' });
+  let settled = false;
+  const fail = (error: Error) => { if (!settled) { settled = true; reject(error); } };
+  const abort = () => { request.abort(); fail(new DOMException('The operation was aborted', 'AbortError')); };
+  if (init?.signal?.aborted) return abort();
+  init?.signal?.addEventListener('abort', abort, { once: true });
+  request.once('error', error => fail(new Error(`网络连接失败：${error.message}`)));
+  request.once('response', response => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    response.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 2_000_000) { request.abort(); fail(new Error('中转站返回的模型列表过大。')); return; }
+      chunks.push(chunk);
+    });
+    response.once('error', error => fail(new Error(`读取中转站响应失败：${error.message}`)));
+    response.once('end', () => {
+      if (settled) return;
+      settled = true;
+      init?.signal?.removeEventListener('abort', abort);
+      const headers = new Headers();
+      for (const [name, values] of Object.entries(response.headers)) for (const value of values) headers.append(name, value);
+      resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers }));
+    });
+  });
+  request.end();
+})) as typeof fetch;
 
 declare const __XA_DEVELOPMENT__: boolean;
 declare const __XA_UPDATE_FEED__: string;
@@ -67,6 +110,8 @@ let pendingOpen: Destination | undefined;
 let track: Awaited<ReturnType<typeof notificationTracker>> | undefined;
 let notificationWork = Promise.resolve();
 const liveNotifications = new Set<Notification>();
+// 项目选择令牌只在这个进程的内存里；窗口一关就清掉。见 app/main/project-bridge.ts。
+const projectTokens = projectSelections();
 const e2eNotices: Notice[] | undefined = process.env.XAGENTS_E2E === '1' ? [] : undefined;
 // 冒烟测试在后台跑：窗口照常创建、绘制和截图，但不显示到屏幕上，程序坞里也不出图标，免得打扰正在用电脑的人。
 const e2eHidden = process.env.XAGENTS_E2E === '1';
@@ -129,6 +174,7 @@ async function openWindow() {
       backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
       webPreferences: { ...securePreferences, preload: join(import.meta.dirname, '../preload/index.cjs'), partition: 'xa-desktop' } });
     window = current;
+    const contentsId = current.webContents.id;
     // 留给页面处理，防止默认菜单的 Cmd+R（Windows 上是 Ctrl+R）先把整个窗口重载。
     current.webContents.on('before-input-event', (_event, input) => {
       const modifier = process.platform === 'win32' ? input.control : input.meta;
@@ -144,12 +190,16 @@ async function openWindow() {
     });
     if (!e2eHidden) current.once('ready-to-show', () => current.show());
     current.on('close', event => {
+      projectTokens.forget(contentsId);
       if (exiting) return;
       event.preventDefault(); current.hide();
       const normal = current.getNormalBounds();
       saving = saving.then(() => saveBounds(app.getPath('userData'), normal)).catch(console.error);
     });
-    current.on('closed', () => { if (window === current) window = null; });
+    current.on('closed', () => {
+      projectTokens.forget(contentsId);
+      if (window === current) window = null;
+    });
     if (devUrl) await current.loadURL(pageUrl); else await current.loadFile(pageFile);
   })().finally(() => { opening = undefined; });
   return opening;
@@ -180,7 +230,8 @@ else {
     // 命令行启动脚本：没装的自动装上，应用换了位置的跟着改；出错只记日志，不影响启动。
     if (app.isPackaged) await refreshCliLauncher().catch(console.error);
     await loadConfiguredRoster();
-    await migrateIcons().catch(console.error);
+    // 每次启动补齐本机后来安装的厂家图标；已有文件不会重复转换。
+    await installIcons().catch(console.error);
     applyAppearance(nativeTheme, (await readSettings()).appearance);
     nativeTheme.on('updated', () => syncBackground(nativeTheme, window));
     // 自动清理旧日志：冒烟测试（XAGENTS_E2E=1）里不跑。清理后账目变了，重新发一份看板数据；出错只写日志。
@@ -209,6 +260,25 @@ else {
     const guard = (event: Electron.IpcMainInvokeEvent) => {
       if (!trustedSender(event, window, pageUrl)) throw new Error('不允许的请求来源。');
     };
+    // 项目登记：原生目录选择只交回展示数据和一次性令牌；仓库路径由后台记住，窗口交不进任何路径。
+    // 系统选择器用的是 Electron 的 dialog（macOS 和 Windows 都是系统原生的），取消不算错误。
+    let choosing = false;
+    const projects = projectActions({
+      chooseFolder: async () => {
+        if (choosing) throw new Error('正在选择文件夹，请稍等。');
+        choosing = true;
+        try {
+          const parent = window && !window.isDestroyed() ? window : null;
+          const options: Electron.OpenDialogOptions = { properties: ['openDirectory'], title: '选择 Git 仓库' };
+          const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+          return result.canceled ? null : result.filePaths[0] ?? null;
+        } finally { choosing = false; }
+      },
+      realpath, git, addProject,
+      checkProject: name => checkProject(name, { quick: true }),
+      updated: async () => { publish(await readDesktopView()); },
+      onError: console.error,
+    }, { selections: projectTokens });
     updater = await desktopUpdater({
       development: __XA_DEVELOPMENT__, packaged: app.isPackaged,
       feed: __XA_UPDATE_FEED__, publicKey: __XA_UPDATE_PUBLIC_KEY__, hosts: __XA_UPDATE_HOSTS__,
@@ -269,6 +339,25 @@ else {
       }
       return view;
     });
+    // 项目登记（docs/tasks/TASK-001.md）：选择不带参数；登记只认选择令牌和允许的字段，仓库路径进不来。
+    ipcMain.handle(channels.projectChoose, (event, ...args: unknown[]) => { guard(event); return projects.choose(args, event.sender.id); });
+    ipcMain.handle(channels.projectRegister, (event, ...args: unknown[]) => { guard(event); return projects.register(args, event.sender.id); });
+    // 规划派发（docs/tasks/TASK-006.md）：核心重新读规划做权威校验后走现有派发流程；成功后发布新 View。
+    const planBridge = planActions({ dispatch: input => planDispatch(input) });
+    ipcMain.handle(channels.planDispatch, async (event, ...args: unknown[]) => {
+      guard(event);
+      const ids = await planBridge(args);
+      publish(await readDesktopView());
+      return ids;
+    });
+    // 打开 Task Spec（docs/tasks/TASK-006.md）：窗口交不进路径。核心按已登记项目和 TASK-005 的 spec 契约
+    // 解析出仓库内的真实文件，只有解析成功才交给系统打开；解析失败原样把中文原因交回窗口。
+    const planSpecBridge = planSpecActions({ open: async input => {
+      const file = await resolveTaskSpec(input.project, input.spec);
+      const failed = await shell.openPath(file);
+      if (failed) throw new Error(failed);
+    } });
+    ipcMain.handle(channels.planSpec, async (event, ...args: unknown[]) => { guard(event); await planSpecBridge(args); });
     for (const action of ['decide', 'redo', 'stop', 'comment'] as const) ipcMain.handle(channels[action], async (event, ...args: unknown[]) => {
       guard(event); await actions(action, args);
     });
@@ -289,6 +378,16 @@ else {
     ipcMain.handle(channels.disconnect, (event, ...args: unknown[]) => { guard(event); return disconnect(connectArgument(args)); });
     ipcMain.handle(channels.settingsGet, (event, ...args: unknown[]) => { guard(event); return settings.get(args); });
     ipcMain.handle(channels.settingsSet, (event, ...args: unknown[]) => { guard(event); return settings.set(args); });
+    ipcMain.handle(channels.deepseekLogin, (event, ...args: unknown[]) => {
+      guard(event);
+      if (args.length !== 1 || typeof args[0] !== 'string') throw new Error('DeepSeek API 密钥参数不对。');
+      return loginDeepseek(args[0]);
+    });
+    ipcMain.handle(channels.deepseekModels, (event, ...args: unknown[]) => {
+      guard(event);
+      if ((args.length !== 1 && args.length !== 2) || typeof args[0] !== 'object' || (args[1] !== undefined && typeof args[1] !== 'string')) throw new Error('获取 DeepSeek 模型的参数不对。');
+      return queryDeepseekModels(args[0] as import('../../src/core/deepseek-settings.ts').DeepseekEndpoint, args[1] as string | undefined, electronRequest);
+    });
     ipcMain.handle(channels.networkAllowed, (event, ...args: unknown[]) => { guard(event); return settings.allowNetwork(args); });
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: '派活工作台', submenu: [{ label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => reveal({ kind: 'settings' }) }, { type: 'separator' }, { label: '退出', role: 'quit' }] },

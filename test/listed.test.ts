@@ -34,12 +34,13 @@ const custom = 'model_provider = "test"\n[model_providers.test]\nbase_url = "htt
 test('按参数测两种系统：程序缺失、平台未开放，一家一个原因；DeepSeek 跟 Codex', async () => {
   for (const windows of [false, true]) {
     const listed = await listedProviders({ windows, found: allFound });
-    assert.deepEqual(listed.filter(p => p.reason === null).map(p => p.icon), windows ? ['codex'] : ['codex', 'grok', 'cursor']);
+    assert.deepEqual(listed.filter(p => p.reason === null).map(p => p.icon), windows ? ['codex'] : ['codex', 'grok', 'cursor', 'kimi']);
     assert.equal(listedWho(listed, 'deepseek'), true);
     if (windows) {
       assert.deepEqual(unlistedProviders(listed), [
         { name: 'Grok', reason: 'Grok 在 Windows 版上暂时不能派' },
         { name: 'Cursor', reason: 'Cursor 在 Windows 版上暂时不能派' },
+        { name: 'Kimi Code', reason: 'Kimi Code 在 Windows 版上暂时不能派' },
       ]);
       assert.throws(() => checkListed(listed, [{ who: 'cursor-opus' }]), /^Error: Cursor 在 Windows 版上暂时不能派$/);
     }
@@ -47,7 +48,7 @@ test('按参数测两种系统：程序缺失、平台未开放，一家一个�
     assert.equal(listedWho(missing, 'codex'), false);
     assert.equal(listedWho(missing, 'deepseek-flash'), false);
     assert.throws(() => checkListed(missing, [{ who: 'deepseek' }]), /^Error: 这台电脑上没找到 Codex$/);
-    assert.equal(unlistedProviders(missing).length, 3);
+    assert.equal(unlistedProviders(missing).length, 4);
   }
 });
 
@@ -55,7 +56,7 @@ test('真实查找用 Codex 派活路径；替身下三家都算找到，平台�
   const c = await local(t);
   for (const windows of [false, true]) {
     const listed = await listedProviders({ windows });
-    assert.equal(listed.filter(p => p.reason === null).length, windows ? 1 : 3);
+    assert.equal(listed.filter(p => p.reason === null).length, windows ? 1 : 4);
   }
   const old = process.env.XAGENTS_CODEX;
   t.after(() => { if (old === undefined) delete process.env.XAGENTS_CODEX; else process.env.XAGENTS_CODEX = old; });
@@ -89,7 +90,7 @@ test('看板只列找到且平台开放的选手和额度；设置原样保留�
     const view = await buildView({ windows, found: async icon => icon !== 'cursor' });
     assert.deepEqual(view.roster.map(p => p.who), whos.filter(w => windows ? isolationOf(w) === 'codex' : isolationOf(w) !== 'cursor'));
     assert.deepEqual(view.quota.map(p => p.icon), windows ? ['codex'] : ['codex', 'grok']);
-    assert.equal(view.unlisted.length, windows ? 2 : 1);
+    assert.equal(view.unlisted.length, windows ? 3 : 1);
     assert.deepEqual(view.settings.workers.grok, stored.workers.grok);
   }
   assert.equal((await buildView({ windows: false, found: allFound })).roster.length, whos.length);
@@ -124,7 +125,7 @@ test('workers 和手册只列本机选手，未列出原因在末尾；无额度
   const guide = await guideAppendix({ windows: true, found: allFound });
   assert.match(guide, /Codex：接的是自定义接口，不查额度/);
   assert.doesNotMatch(guide, /（grok）|（cursor-opus）|- Grok：|- Cursor/);
-  assert.equal(guide.trim().split('\n').at(-1), 'Grok 在 Windows 版上暂时不能派；Cursor 在 Windows 版上暂时不能派');
+  assert.equal(guide.trim().split('\n').at(-1), 'Grok 在 Windows 版上暂时不能派；Cursor 在 Windows 版上暂时不能派；Kimi Code 在 Windows 版上暂时不能派');
 });
 
 test('自定义接口不碰会话记录，丢弃旧数字和触顶标记；缓存、看板、停派检查都不带 Codex', async t => {
@@ -186,7 +187,7 @@ test('更新可见选手时不抹掉隐藏厂家的设置，不能靠隐藏选�
     if (oldCodex === undefined) delete process.env.XAGENTS_CODEX; else process.env.XAGENTS_CODEX = oldCodex;
   });
   const initial = await readSettings();
-  const off = Object.fromEntries(whos.filter(w => isolationOf(w) === 'codex').map(w => [w, { ...initial.workers[w], enabled: false }]));
+  const off = Object.fromEntries(whos.filter(w => isolationOf(w) === 'codex' || isolationOf(w) === 'kimi').map(w => [w, { ...initial.workers[w], enabled: false }]));
   await assert.rejects(writeSettings({ workers: off }), /至少要有一位选手开着/);
   await writeSettings({ workers: { codex: { ...initial.workers.codex, efforts: ['high'] } } });
   assert.deepEqual((await readSettings()).workers.grok, initial.workers.grok);

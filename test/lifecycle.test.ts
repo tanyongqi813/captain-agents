@@ -1,19 +1,150 @@
 import { test } from 'node:test';
 import { isWindows, killTree, shell, treeSpawn } from '../src/core/platform.ts';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, access, mkdir, symlink, readdir } from 'node:fs/promises';
+import { readFile, writeFile, access, mkdir, symlink, readdir, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { context, until, desktopView, killLeftover } from './helpers.ts';
+import { context, until, desktopView, killLeftover, exec } from './helpers.ts';
 import { alive } from '../src/core/fsx.ts';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { pathToFileURL } from 'node:url';
 import { root } from './helpers.ts';
 import { ensureHome } from '../src/core/paths.ts';
 import { PLATFORM_SWITCHES } from '../src/core/env.ts';
 import { reserveJob } from '../src/core/ids.ts';
 import { createJob, updateJob } from '../src/core/job.ts';
 import { codexPermissions } from '../src/core/sandbox.ts';
+import { budgetTick, initialBudgetState, checkBudget, parseBudget } from '../src/core/budget.ts';
+
+test('执行预算判定：停滞门槛、一次预警、宽限解除、硬上限优先和休眠扣除', () => {
+  const budget = { stallMinutes: 10, graceMinutes: 2, maxMinutes: 30 };
+  const start = Date.parse('2026-10-18T00:00:00Z');
+  const min = 60_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const run = (state: ReturnType<typeof initialBudgetState>, now: number, extra: Partial<Parameters<typeof budgetTick>[2]> = {}) =>
+    budgetTick(budget, state, { now, startedAt: start, sleeps: [], lastActivityAt: null, logChangedAt: null, ...extra });
+  // 停滞 10 分钟前：照常跑。
+  let state = initialBudgetState();
+  assert.equal(run(state, start + 9 * min).event, null);
+  assert.equal(run(state, start + 9 * min).cleared, false);
+  // 达到门槛：写一次预警（stall-warning），还不停止。
+  let tick = run(state, start + 10 * min);
+  assert.equal(tick.event, 'stall-warning');
+  assert.equal(tick.state.warnedAt, start + 10 * min);
+  state = tick.state;
+  // 宽限 2 分钟内没有新信号也不停。
+  assert.equal(run(state, start + 11 * min).event, null);
+  // 宽限期内日志恢复增长：解除预警（cleared），从这次信号重新算停滞。
+  tick = run(state, start + 11.5 * min, { logChangedAt: start + 11.5 * min });
+  assert.equal(tick.event, null);
+  assert.equal(tick.cleared, true);
+  state = tick.state;
+  assert.equal(state.warnedAt, null);
+  // 再次静止到门槛：第二次预警；宽限结束仍无信号才算停滞。
+  tick = run(state, start + 21.5 * min);
+  assert.equal(tick.event, 'stall-warning');
+  state = tick.state;
+  assert.equal(run(state, start + 23 * min).event, null, '宽限 2 分钟还没到');
+  tick = run(state, start + 23.5 * min);
+  assert.equal(tick.event, 'stalled');
+  // 硬上限优先：信号一直更新，但单次总时限到了照样超时。
+  state = initialBudgetState();
+  tick = run(state, start + 30 * min, { lastActivityAt: start + 30 * min, logChangedAt: start + 30 * min });
+  assert.equal(tick.event, 'timed-out');
+  // 休眠扣除：睡了 5 分钟，墙上 12 分钟只算干了 7 分钟，不到停滞门槛。
+  const slept = [{ from: iso(start + 2 * min), to: iso(start + 7 * min) }];
+  tick = budgetTick(budget, initialBudgetState(), { now: start + 12 * min, startedAt: start, sleeps: slept, lastActivityAt: null, logChangedAt: null });
+  assert.equal(tick.event, null);
+  tick = budgetTick(budget, initialBudgetState(), { now: start + 17 * min, startedAt: start, sleeps: slept, lastActivityAt: null, logChangedAt: null });
+  assert.equal(tick.event, 'stall-warning', '扣掉 5 分钟休眠后干了 10 分钟');
+  // 校验：范围与“总上限必须大于停滞加宽限”。
+  assert.deepEqual(checkBudget({ stallMinutes: 10, graceMinutes: 2, maxMinutes: 30 }), { stallMinutes: 10, graceMinutes: 2, maxMinutes: 30 });
+  for (const bad of [{ stallMinutes: 9, graceMinutes: 2, maxMinutes: 30 }, { stallMinutes: 10, graceMinutes: 2, maxMinutes: 12 }, { stallMinutes: 10, graceMinutes: 2, maxMinutes: 29 }]) {
+    assert.throws(() => checkBudget(bad), /执行预算不合法/);
+  }
+  assert.deepEqual(parseBudget('20,5,120'), { stallMinutes: 20, graceMinutes: 5, maxMinutes: 120 });
+  assert.throws(() => parseBudget('20,5'), /--budget/);
+});
+
+// 只登记不启动看管（和 runner-fatal 同款）：由测试自己用快进时钟驱动 runWorker。
+async function dispatchOnly(c: Awaited<ReturnType<typeof context>>, summary: string) {
+  const dispatched = await exec(process.execPath, ['--input-type=module', '-e',
+    `import { dispatch } from './src/core/dispatch.ts'; const [job] = await dispatch(process.argv[1], { project:'测试', who:['grok:high'], summary:${JSON.stringify(summary)} }, async () => {}); console.log(job.id);`, c.task], root, c.env);
+  assert.equal(dispatched.code, 0, dispatched.stderr);
+  return dispatched.stdout.trim();
+}
+
+// 用 25 倍单调时钟跑看管：每 2 秒的真实采集在时钟上走约 50 秒（不到 60 秒，不会记成休眠）。
+async function budgetRunner(c: Awaited<ReturnType<typeof context>>, id: string, mode: string) {
+  const script = join(c.temp, `budget-runner-${mode}.mjs`);
+  await writeFile(script, `
+    import { runWorker } from ${JSON.stringify(pathToFileURL(join(root, 'src/core/runner.ts')).href)};
+    const [id] = process.argv.slice(2);
+    const t0 = Date.now(), factor = 25;
+    const now = () => t0 + (Date.now() - t0) * factor;
+    await runWorker(id, { now });
+  `);
+  return exec(process.execPath, [script, id], root, { ...c.env, XA_TEST_MODE: mode });
+}
+
+test('执行预算：替身永不退出，快进时钟到停滞，进程树被停、留下 stalled 证据', { timeout: 120000 }, async t => {
+  const c = await context(t);
+  assert.equal((await c.add(['--budget', '10,1,30'])).code, 0);
+  const id = await dispatchOnly(c, '验证停滞自动收尾');
+  const dir = join(c.home, 'jobs', id);
+  const running = budgetRunner(c, id, 'hang');
+  const grandchild = Number(await until(() => readFile(join(dir, 'grandchild.pid'), 'utf8').catch(() => '')));
+  const result = await running;
+  assert.equal(result.code, 0, result.stderr);
+  const job = (await c.jobs()).find(j => j.id === id)!;
+  assert.equal(job.state, 'stopped');
+  assert.equal(job.termination, 'stalled');
+  assert.match(job.error ?? '', /停滞/);
+  // 预警快照是有界收尾的证据：写下过停滞时刻、最后信号时刻和日志字节数。
+  assert.ok(job.stallWarning);
+  assert.ok(Number.isFinite(Date.parse(job.stallWarning.at)));
+  assert.ok(Number.isFinite(Date.parse(job.stallWarning.signalAt)));
+  assert.ok(job.stallWarning.logBytes >= 0);
+  // 报告、改动照样收集，选手和孙进程都不留。
+  await access(join(dir, 'report.md'));
+  await access(join(dir, 'diff.patch'));
+  await until(async () => !alive(job.workerPid) && !alive(grandchild));
+  // 公开 View 里也能区分出停滞收尾；旧记录（别的测试留下的）是 null。
+  const view = await desktopView(c.home);
+  assert.equal(view.jobs.find(j => j.id === id)?.termination, 'stalled');
+});
+
+test('执行预算：宽限期内日志恢复增长解除停滞候选，超过硬上限仍停止', { timeout: 120000 }, async t => {
+  const c = await context(t);
+  assert.equal((await c.add(['--budget', '10,2,30'])).code, 0);
+  const id = await dispatchOnly(c, '验证总时限硬上限');
+  const dir = join(c.home, 'jobs', id);
+  const running = budgetRunner(c, id, 'hang');
+  const grandchild = Number(await until(() => readFile(join(dir, 'grandchild.pid'), 'utf8').catch(() => '')));
+  // 第一段：静止不动，快进时钟到停滞门槛（10 分钟预算 ≈ 24 秒真实时间），预警写下。
+  await until(async () => (await c.jobs()).find(j => j.id === id)?.stallWarning, warned => Boolean(warned), 60000);
+  assert.equal((await c.jobs()).find(j => j.id === id)?.state, 'running');
+  // 第二段：宽限期内让 stderr.log 恢复增长（选手还在干活的迹象）→ 预警解除，任务继续跑。
+  const appends = setInterval(() => { void appendFile(join(dir, 'stderr.log'), '仍在干活\n').catch(() => {}); }, 200);
+  try {
+    await until(async () => {
+      const job = (await c.jobs()).find(j => j.id === id)!;
+      return job.state === 'running' && !job.stallWarning;
+    }, ok => ok, 30000);
+    // 第三段：信号一直在更新不会再预警，但单次总时限 30 分钟（≈72 秒真实）是硬上限，照样停。
+    const result = await running;
+    assert.equal(result.code, 0, result.stderr);
+  } finally {
+    clearInterval(appends);
+  }
+  const job = (await c.jobs()).find(j => j.id === id)!;
+  assert.equal(job.state, 'stopped');
+  assert.equal(job.termination, 'timed_out');
+  assert.match(job.error ?? '', /总时限/);
+  assert.equal(job.stallWarning, undefined, '解除过的预警不会留着');
+  await until(async () => !alive(job.workerPid) && !alive(grandchild));
+});
 
 test('四家同批派发到完成、共同起点、收集、diff、清理与记录保留', async t => {
   const c = await context(t);
@@ -137,6 +268,7 @@ test('stop 结束整组选手含孙进程，也能终止忽略 SIGTERM 的选手
     await until(async () => !alive(j!.workerPid) && !alive(grandchild));
     const stopped = (await c.jobs()).find(x => x.id === j!.id)!;
     assert.equal(stopped.state, 'stopped'); assert.ok(stopped.ended);
+    assert.equal(stopped.termination, 'manual', '手动停止记成 manual，和停滞、超时分开');
     assert.equal((await c.cli(['wait', j!.id])).code, 0);
     assert.equal((await c.cli(['clean', j!.id])).code, 0);
   }
@@ -152,6 +284,7 @@ test('看管进程被 SIGKILL 后 status 判失联，wait 失败，stop 收掉�
   // macOS：看管进程没了，选手还在，清理要先拒绝。Windows：系统把选手跟着看管进程一起收走了，没有残留可拒绝。
   if (!isWindows) assert.equal((await c.cli(['clean', j.id])).code, 1);
   assert.equal((await c.cli(['stop', j.id])).code, 0); await until(async () => !alive(j.workerPid));
+  assert.equal((await c.jobs())[0].termination, 'manual', '看管进程已不在时由 stop 直接收尾，也记 manual');
   assert.equal((await c.cli(['clean', j.id])).code, 0);
 });
 test('快速版和 cursor-sonnet：任务记录、状态表、统计、看板数据都分得清', async t => {
@@ -273,6 +406,7 @@ test('看管进程尚未安装信号处理器时 stop 仍记为 stopped', async 
   const stopped = await c.cli(['stop', id]); assert.equal(stopped.code, 0, stopped.stderr);
   await ended;
   assert.equal((await c.jobs())[0].state, 'stopped');
+  assert.equal((await c.jobs())[0].termination, 'manual', '派发进程不在、stopRequested 由状态修正收尾，也记 manual');
 });
 
 // 看管进程被直接杀掉（或电脑重启）以后过了很久才来 stop 的情况：记录里的选手早就不在了，只能去找它留下的子孙。
@@ -435,7 +569,7 @@ test('项目显示名：登记时 --label，或用 project label 单独改；只
   assert.equal((await c.cli(['project', 'label', '没有这个', '名字'])).code, 1);
   process.env.XAGENTS_HOME = c.home;
   const { buildView } = await import('../src/core/view.ts');
-  assert.deepEqual((await buildView()).projects.find(p => p.name === '测试'), { name: '测试', label: '画布创作站', archived: false });
+  assert.deepEqual((await buildView()).projects.find(p => p.name === '测试'), { name: '测试', label: '画布创作站', repo: join(c.repo), archived: false });
 });
 
 test('清理 Grok 活时，它在 ~/.grok/sessions 下的会话文件夹一起移进废纸篓；别的会话文件夹不动', { skip: isWindows ? '只属于 macOS：Grok 的会话文件夹名是按 macOS 上实测的写法算的；Windows 上不开 Grok 这一路' : false }, async t => {

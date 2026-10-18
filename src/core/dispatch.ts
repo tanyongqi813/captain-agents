@@ -8,7 +8,7 @@ import { paths, jobDir } from './paths.ts';
 import { withLock, writeJson, writeAtomic } from './fsx.ts';
 import { createJob, updateJob, listJobs, readJob, active, finish } from './job.ts';
 import type { Job, Batch } from './job.ts';
-import { findProject, worktreePath } from './project.ts';
+import { findProject, projectBudget, worktreePath } from './project.ts';
 import { uncommitted } from './project-check.ts';
 import { git, addWorktree, setup } from './worktree.ts';
 import { reserveJob, reserveBatch } from './ids.ts';
@@ -24,9 +24,11 @@ import { checkChoice } from './policy.ts';
 import { isolationOf, vendorOf } from './roster.ts';
 import { initialRealCheck } from './real.ts';
 import { readChat } from './chat.ts';
+import { assertDeepseekAvailable } from './deepseek-settings.ts';
 
 // team：小队派的队员（docs/design-team.md），记进任务记录，看板据此画进小队卡。
-export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string } };
+// plan：从项目任务规划派发的追溯元数据（docs/tasks/TASK-006.md），由规划派发入口下发，写进任务记录。
+export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string } };
 export async function launch(job: Job, cli: string) {
   const fd = await open(join(jobDir(job.id), 'supervisor.log'), 'a', 0o600);
   try {
@@ -46,10 +48,11 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   if (!summary) throw new Error('请用 --summary 写一两句给主人看的‘要做什么’，用大白话，不写文件名和技术细节。');
   if ([...summary].length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(options.summary!)) throw new Error('--summary 请写 1–200 字，不能含控制字符。');
   if (!options.who.length) throw new Error('还没选择选手，请加上 --who codex:xhigh（可以重复）。');
-  const { workers, archivedProjects, limits, networkAllowed } = await readSettings();
+  const { workers, archivedProjects, limits, networkAllowed, deepseek } = await readSettings();
   const chosen = options.who.map(selection);
   checkListed(await listedProviders(), chosen);
   for (const choice of chosen) checkChoice(workers, choice);
+  assertDeepseekAvailable(deepseek, chosen.some(choice => vendorOf(choice.who) === 'deepseek'));
   const kind = options.kind || '实现';
   if (!['修复', '实现', '审查', '调研', '测量'].includes(kind)) throw new Error('--kind 只允许修复、实现、审查、调研、测量，请修改后重试。');
   const temporaryMax = Number(process.env.XAGENTS_MAX_RUNNING ?? limits.maxRunning);
@@ -58,6 +61,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   // 额外禁读名单和主人设置一起在开头读好，后面开隔离一路带下去；读不出来就不派。
   const project = { ...await findProject(options.project), denyReadHome: await extraDenyRead() };
   if (archivedProjects.includes(project.name)) throw new Error(`项目 ${project.name} 已归档。要派活先取消归档：xagents project unarchive ${project.name}`);
+  projectBudget(project); // 执行预算（停滞/宽限/单次总上限）在派活前把关：缺省 20/5/120，登记里写了不合法的直接拒绝。
   const network = networkAllowed;
   await worktreePath(project, 'check'); // 先做副本目录的安全检查（比如拒绝借符号链接开到仓库外），别被下面的提示盖住
   // 主目录有没提交的改动时先拦下：选手的副本看不到它们，常见于负责人自己写了一半的骨架还没提交。
@@ -92,7 +96,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   checkQuota(quota, chosen, options.force, limits.quotaStop);
   if (chosen.some(s => isolationOf(s.who) !== 'codex') && !process.env.XAGENTS_FAKE_WORKER) await srtPath();
   // 替身不会启动任何真实选手，不把测试结果写成隔离通过。
-  if (!process.env.XAGENTS_FAKE_WORKER) { ensurePlatform(chosen.map(s => isolationOf(s.who))); await ensureSelfcheck(); }
+  if (!process.env.XAGENTS_FAKE_WORKER) { const used = chosen.map(s => isolationOf(s.who)); ensurePlatform(used); await ensureSelfcheck(used); }
   await installIcons();
   const jobs: Job[] = [];
   await withLock(join(paths().cache, 'dispatch'), async () => {
@@ -109,6 +113,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
           ...(network ? { network: true as const } : {}),
           ...(options.team ? { team: { ...options.team } } : {}),
           ...(options.chat ? { chat: { ...options.chat } } : {}),
+          ...(options.plan ? { plan: { ...options.plan } } : {}),
           kind, title, summary, state: 'queued', created: now.toISOString(), queuedBy: process.pid, queuedSince: processSince(process.pid) };
         await createJob(Object.assign(job, { quota_before: quota })); jobs.push(job);
       }

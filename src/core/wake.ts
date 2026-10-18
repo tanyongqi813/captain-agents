@@ -17,6 +17,7 @@ import { isolationOf, vendorOf } from './roster.ts';
 import { ensurePlatform, ensureSelfcheck } from './selfcheck.ts';
 import { extraDenyRead, readSettings } from './settings.ts';
 import { checkDeepseekLogin, refreshGrokLogin, result, selection, SESSION_RE } from './workers.ts';
+import { assertDeepseekAvailable } from './deepseek-settings.ts';
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -48,6 +49,14 @@ export function sessionFromOutput(who: Job['who'], raw: string): string | undefi
       const id = typeof row?.sessionId === 'string' ? row.sessionId : /"sessionId"\s*:\s*"([^"]+)"/.exec(line)?.[1];
       if (id && SESSION_RE.test(id)) return id;
     }
+    if (isolation === 'kimi') {
+      const id = row?.type === 'session.resume_hint' && typeof row.session_id === 'string' ? row.session_id : undefined;
+      if (id && SESSION_RE.test(id)) return id;
+    }
+    if (isolation === 'cursor') {
+      const id = typeof row?.session_id === 'string' ? row.session_id : undefined;
+      if (id && SESSION_RE.test(id)) return id;
+    }
   }
   return undefined;
 }
@@ -62,13 +71,21 @@ async function renameRound(dir: string, name: string, n: number) {
 }
 // 在任务锁里调用：这一轮已经不在跑。把用时抄进 rounds，并把日志改名为 run-r<n>.log 等。
 export async function archiveFinished(job: Job, n: number) {
-  if (!job.rounds?.some(round => round.n === n)) {
+  const existing = job.rounds?.find(round => round.n === n);
+  if (!existing) {
     if (!job.ended || !job.started) throw new Error(`任务 ${job.id} 还没有第 ${n} 轮的结束记录，没法续接。请查看任务日志。`);
     const usage = job.usage ? { ...job.usage } : undefined;
     (job.rounds ??= []).push({
       n, started: job.started, ended: job.ended, seconds: job.seconds ?? 0, exit: job.exit ?? null,
       ...(usage ? { usage } : {}), state: job.state,
+      // 收尾原因和停滞预警跟着这一轮归档：续接后当前轮清空，历史证据不丢。
+      ...(job.termination ? { termination: job.termination } : {}),
+      ...(job.stallWarning ? { stallWarning: { ...job.stallWarning } } : {}),
     });
+  } else if (existing.ended === job.ended) {
+    // 这一轮的记录已经存在（比如收尾时就折进去了）：证据补进去，不重复建记录。
+    existing.termination ??= job.termination;
+    if (job.stallWarning && !existing.stallWarning) existing.stallWarning = { ...job.stallWarning };
   }
   const dir = jobDir(job.id);
   for (const name of ['run.log', 'report.md', 'final.md', 'stderr.log']) await renameRound(dir, name, n);
@@ -113,6 +130,9 @@ export function foldRounds(job: Job) {
     (job.rounds ??= []).push({
       n, started: job.started, ended: job.ended, seconds: job.seconds ?? 0, exit: job.exit ?? null,
       ...(usage ? { usage } : {}), state: job.state,
+      // 收尾原因和停滞预警跟着这一轮归档：续接后当前轮清空，历史证据不丢。
+      ...(job.termination ? { termination: job.termination } : {}),
+      ...(job.stallWarning ? { stallWarning: { ...job.stallWarning } } : {}),
     });
   }
   const rounds = job.rounds ?? [];
@@ -158,6 +178,8 @@ export async function resumeMember(job: Job, round: number, promptBody: string):
     await writeAtomic(join(jobDir(current.id), resume.prompt), promptBody);
     await archiveFinished(current, round - 1);
     shelveVerdicts(current, round - 1);
+    // 上一轮的收尾原因和停滞预警已随 archiveFinished 归到那一轮（current.rounds）：当前轮清空，不污染新一轮，证据留在 rounds 里。
+    delete current.termination; delete current.stallWarning;
     usePreparedRun(current, prepared);
     cli = prepared.entry;
     current.resume = resume;
@@ -183,11 +205,12 @@ export async function wakeGate(choice: ReturnType<typeof selection>, project?: s
   try {
     const settings = await readSettings();
     checkChoice(settings.workers, choice);
+    assertDeepseekAvailable(settings.deepseek, vendorOf(choice.who) === 'deepseek');
     if (project && settings.archivedProjects.includes(project)) throw new Error(`项目 ${project} 已归档，请先取消归档。`);
     checkQuota(await ensureQuota(), [choice], false, settings.limits.quotaStop);
     if (!process.env.XAGENTS_FAKE_WORKER) {
       ensurePlatform([isolationOf(choice.who)]);
-      await ensureSelfcheck();
+      await ensureSelfcheck([isolationOf(choice.who)]);
       if (isolationOf(choice.who) === 'grok') await refreshGrokLogin();
       if (vendorOf(choice.who) === 'deepseek') await checkDeepseekLogin();
     }

@@ -236,10 +236,10 @@ function Room({ chat, view, open }: { chat: ViewChat; view: View; open: Open }) 
     {confirm && <ConfirmDialog busy={busy} message="停下后，正在动手的那位会停下、排队的都取消；做到一半的东西保留，之后再 @ 照常派活。" confirmLabel="确认停下" onCancel={() => setConfirm(false)} onConfirm={() => void stop()} />}
   </div>;
 }
-// 新建群聊：选项目、起个名字、拉选手进群（每位选强度，可设只读）。只列主人设置里开着、能进群的选手（Cursor 暂不行）。
+// 新建群聊：选项目、起个名字、拉选手进群（每位选强度，可设只读）。只列主人设置里开着、当前名单里有的选手。
 function NewChat({ view, close, created }: { view: View; close: () => void; created: (id: string) => void }) {
   const projects = view.projects.filter(p => !p.archived);
-  const candidates = view.roster.filter(r => view.settings.workers[r.who]?.enabled && !r.who.startsWith('cursor'));
+  const candidates = view.roster.filter(r => view.settings.workers[r.who]?.enabled);
   const [project, setProject] = useState(projects[0]?.name ?? ''), [title, setTitle] = useState('');
   const [picked, setPicked] = useState<Record<string, { effort: string; readOnly: boolean }>>({});
   const [busy, setBusy] = useState(false), [error, setError] = useState('');

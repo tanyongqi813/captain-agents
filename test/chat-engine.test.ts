@@ -17,7 +17,7 @@ import { dispatch } from '../src/core/dispatch.ts';
 import { git, removeWorktree } from '../src/core/worktree.ts';
 import { command, resumeCommand } from '../src/core/workers.ts';
 import { resumeMember } from '../src/core/wake.ts';
-import { sandbox } from '../src/core/sandbox.ts';
+import { cursorPersistPaths, sandbox } from '../src/core/sandbox.ts';
 
 async function setup(t: TestContext, reports: Record<string, string | string[]> = {}, modes: Record<string, string> = {}) {
   let c: Awaited<ReturnType<typeof context>>;
@@ -90,7 +90,9 @@ describe('项目群聊推进', { concurrency: 1 }, () => {
     // 若错误启动旧入口，替身不会运行；证明新包既拍了、也实际用于启动。
     await writeFile(join(oldRuntime, 'src/core/worker-entry.ts'), 'throw new Error("启动了旧包");');
     const snapshotted = JSON.parse(await readFile(join(chatDir(chat.id), 'versions.json'), 'utf8')).snapshotted as string;
-    await updateJob(id, j => { j.verify = { ok: true, at: 'T1', steps: [] }; j.verifySkip = { reason: '另有理由', at: 'T1' }; j.realCheck = { needed: true, steps: ['看一眼'], skipped: { reason: '只加测试', at: 'T1' } }; j.decision = { kind: 'adopt', at: 'T1', by: 'lead' }; });
+    await updateJob(id, j => { j.verify = { ok: true, at: 'T1', steps: [] }; j.verifySkip = { reason: '另有理由', at: 'T1' }; j.realCheck = { needed: true, steps: ['看一眼'], skipped: { reason: '只加测试', at: 'T1' } }; j.decision = { kind: 'adopt', at: 'T1', by: 'lead' };
+      // 模拟这一轮是停滞后收尾的：续接时终止原因和预警快照要归到这一轮，当前轮清空。
+      j.termination = 'stalled'; j.stallWarning = { at: 'T1', signalAt: 'T0', logBytes: 42 }; });
     await sayInChat(chat.id, '@Grok 新任务独有标记', 'lead');
     await settled(chat.id);
     const second = await readJob(id), seen = await observed(id);
@@ -115,9 +117,17 @@ describe('项目群聊推进', { concurrency: 1 }, () => {
     assert.deepEqual(second.rounds![0].verify, { ok: true, at: 'T1', steps: [] }); assert.equal(second.rounds![0].decision?.kind, 'adopt');
     assert.equal(second.rounds![0].realCheck?.skipped?.reason, '只加测试');
     assert.equal(second.rounds![1].decision, undefined);
+    // 上一轮的终止原因和停滞预警归档到那一轮；当前轮清空，新一轮成功结束前不暴露旧终止原因。
+    assert.equal(second.rounds![0].termination, 'stalled');
+    assert.deepEqual(second.rounds![0].stallWarning, { at: 'T1', signalAt: 'T0', logBytes: 42 });
+    assert.equal(second.termination, undefined);
+    assert.equal(second.stallWarning, undefined);
     await sayInChat(chat.id, '@Grok 第三次安排', 'owner'); await settled(chat.id);
     const third = await readJob(id);
     assert.equal(third.usage?.read, 300); assert.equal(third.rounds?.length, 3);
+    assert.equal(third.termination, undefined, '第二轮正常结束，不暴露上一轮的终止原因');
+    assert.equal(third.stallWarning, undefined);
+    assert.deepEqual(third.rounds![0].termination, 'stalled', '历史证据留在所属轮');
     assert.deepEqual(third.launches?.map(r => r.round), [1, 2, 3]);
     assert.deepEqual(third.launches!.slice(0, 2), second.launches);
     assert.deepEqual(third.launches![2].command.args.slice(1), (await observed(id)).args);
@@ -458,6 +468,59 @@ describe('项目群聊推进', { concurrency: 1 }, () => {
     await assert.rejects(dispatch(c.task, { ...options, ro: true, dirtyOk: false }), /没提交/);
     assert.equal((await c.jobs()).length, 0);
   });
+
+  test('Cursor 成员：首轮、只读交接、排队、停下后再用原会话续接', async t => {
+    const c = await setup(t, {
+      'cursor-grok': ['第一轮写完 @CursorClaude 请看', '续上了'],
+      'cursor-opus': '看完了',
+    }, { 'cursor-opus': 'hold' });
+    const chat = await createChat({ project: '测试', title: 'Cursor 群', members: ['cursor-grok:high', 'cursor-opus:high:ro'] });
+    await sayInChat(chat.id, '@CursorGrok 写一句', 'owner');
+    const held = await until(() => readChat(chat.id), row => row.busy?.who === 'cursor-opus', 45_000);
+    await until(() => readJob(held.busy!.job), j => j.state === 'running' && !!j.workerPid, 20_000);
+    const writerId = held.members.find(m => m.who === 'cursor-grok')!.job!;
+    const reviewerId = held.busy!.job;
+    const writer = await readJob(writerId), reviewer = await readJob(reviewerId);
+    assert.equal(writer.worktree, chat.worktree);
+    assert.equal(reviewer.worktree, chat.worktree);
+    assert.equal(writer.mode, 'workspace-write');
+    assert.equal(reviewer.mode, 'read-only');
+    assert.ok(writer.session);
+    const first = await observed(writerId);
+    assert.ok(first.args.includes('cursor-agent'));
+    assert.ok(!first.args.includes('--resume'));
+    await until(async () => { try { await access(join(jobDir(reviewerId), 'observed.json')); return true; } catch { return false; } }, Boolean, 20_000);
+    const review = await observed(reviewerId);
+    const modeAt = review.args.indexOf('--mode');
+    assert.equal(review.args[modeAt + 1], 'ask');
+    assert.equal(review.cwd, chat.worktree);
+    await sayInChat(chat.id, '@CursorGrok 先排着', 'owner');
+    const queued = await until(() => readChat(chat.id), row => row.queue.some(q => q.who === 'cursor-grok'), 20_000);
+    assert.equal(queued.busy?.who, 'cursor-opus');
+    const stopped = await stopChat(chat.id);
+    assert.equal(stopped.busy, undefined);
+    assert.deepEqual(stopped.queue, []);
+    assert.equal((await readJob(reviewerId)).state, 'stopped');
+    await sayInChat(chat.id, '@CursorGrok 再派一次', 'owner');
+    await settled(chat.id);
+    const resumed = await readJob(writerId);
+    assert.equal(resumed.resume?.round, 2);
+    assert.equal(resumed.session, writer.session);
+    assert.equal(resumed.worktree, chat.worktree);
+    const seen = await observed(writerId);
+    assert.ok(seen.args.includes('--resume'));
+    assert.ok(seen.args.includes(writer.session!));
+    assert.match(seen.prompt, /再派一次/);
+    assert.doesNotMatch(seen.prompt, /第一轮写完/);
+    const settings = JSON.parse(await readFile(join(jobDir(writerId), resumed.runtime!, 'sandbox.json'), 'utf8'));
+    const generated = await sandbox(resumed, resumed.isolation!);
+    const persist = await cursorPersistPaths();
+    const firstSettings = JSON.parse(await readFile(join(jobDir(writerId), resumed.launches![0].runtime, 'sandbox.json'), 'utf8'));
+    assert.deepEqual(firstSettings.filesystem.allowWrite, generated.filesystem.allowWrite);
+    assert.deepEqual(settings.filesystem.allowWrite, [...generated.filesystem.allowWrite, ...persist]);
+    assert.ok(!settings.filesystem.allowWrite.includes('/tmp'));
+    assert.ok(!settings.filesystem.allowWrite.includes('/private/tmp'));
+  });
 });
 
 
@@ -483,7 +546,6 @@ test('不设限通过 wake 叫醒 95% 的成员并续接，无需 force', async 
   const job = await readJob(id);
   assert.equal(job.state, 'done'); assert.equal(job.rounds?.length, 2);
 });
-
 
 // 上一轮的选手进程号留在记录里的话，新一轮的看管进程登记新号之前有人 stop，就会照着旧号去找“留下的子孙”（Windows 上会找错）。
 test('叫醒下一轮时，上一轮的选手进程号不带进新一轮', async t => {

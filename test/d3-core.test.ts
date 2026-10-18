@@ -10,6 +10,7 @@ import type { Job } from '../src/core/job.ts';
 import { decide, requestRedo, markHandled } from '../src/core/decide.ts';
 import { readSettings, writeSettings } from '../src/core/settings.ts';
 import { effectiveWorkers } from '../src/core/policy.ts';
+import { defaultDeepseekEndpoint } from '../src/core/deepseek-settings.ts';
 import { SleepMonitor } from '../src/core/sleeps.ts';
 import { buildView } from '../src/core/view.ts';
 import { ensureHome } from '../src/core/paths.ts';
@@ -209,7 +210,7 @@ test('读一次设置不建锁，也不动登记处目录里的任何文件', as
     assert.deepEqual(run.after, run.before, '读设置改动了登记处目录里的文件');
     return run.result;
   };
-  assert.deepEqual(await readOnce(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false });
+  assert.deepEqual(await readOnce(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false, deepseek: defaultDeepseekEndpoint });
   await writeFile(join(c.home, 'config.json'), JSON.stringify({ keepAwake: false, notifications: true }));
   assert.equal((await readOnce()).keepAwake, false);
   // 反向对照：写一个文件、再建一个马上删掉的锁目录，上面这套必须看得见，不然前面的断言只是白过。
@@ -228,12 +229,12 @@ test('读一次设置不建锁，也不动登记处目录里的任何文件', as
 
 test('设置默认开启；部分写入、并发修改和旧颜色兼容，保留未知配置；损坏可恢复', async t => {
   const c = await registry(t), file = join(c.home, 'config.json');
-  assert.deepEqual(await readSettings(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false });
+  assert.deepEqual(await readSettings(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false, deepseek: defaultDeepseekEndpoint });
   await assert.rejects(readFile(file), { code: 'ENOENT' });
   await writeFile(file, JSON.stringify({ board: { columns: { running: '#123456' } }, custom: 42 }));
   assert.equal((await readSettings()).columns?.running, '#123456');
   await Promise.all([writeSettings({ keepAwake: false }), writeSettings({ notifications: false }), writeSettings({ columns: { running: '#abcdef' } })]);
-  assert.deepEqual(await readSettings(), { keepAwake: false, notifications: false, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], columns: { running: '#abcdef' }, workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false });
+  assert.deepEqual(await readSettings(), { keepAwake: false, notifications: false, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], columns: { running: '#abcdef' }, workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false, deepseek: defaultDeepseekEndpoint });
   assert.equal(JSON.parse(await readFile(file, 'utf8')).custom, 42);
   await writeSettings({ keepAwake: true }); assert.equal((await readSettings()).notifications, false);
   for (const invalid of [{ keepAwake: 'no' }, { notifications: 0 }, { columns: { x: 5 } }, { other: true }, null, []]) {
@@ -241,10 +242,10 @@ test('设置默认开启；部分写入、并发修改和旧颜色兼容，保�
   }
   for (const raw of ['{', 'null', '[]', '42', '{"keepAwake":"false","notifications":null,"columns":[]}']) {
     await writeFile(file, raw);
-    assert.deepEqual(await readSettings(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false });
+    assert.deepEqual(await readSettings(), { keepAwake: true, notifications: true, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false, deepseek: defaultDeepseekEndpoint });
     assert.equal(await readFile(file, 'utf8'), raw);
     await writeSettings({ notifications: false });
-    assert.deepEqual(await readSettings(), { keepAwake: true, notifications: false, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false });
+    assert.deepEqual(await readSettings(), { keepAwake: true, notifications: false, appearance: 'system', storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, archivedProjects: [], workers: effectiveWorkers(undefined), models: { extra: {}, dropped: [], seen: {} }, networkAllowed: false, deepseek: defaultDeepseekEndpoint });
   }
   assert.ok(!(await readdir(c.home)).some(name => name.endsWith('.tmp') || name === '.lock'));
 });

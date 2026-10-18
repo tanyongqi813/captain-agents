@@ -1,4 +1,4 @@
-import { realpath, readdir } from 'node:fs/promises';
+import { realpath, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { relativeInside, samePath } from './platform.ts';
 import { paths, safeName } from './paths.ts';
@@ -9,10 +9,13 @@ import type { VerifyStep } from './verify.ts';
 import { listJobs } from './job.ts';
 import { writeSettings } from './settings.ts';
 import { hasCode } from './fsx.ts';
+import { checkBudget, DEFAULT_BUDGET } from './budget.ts';
+import type { Budget } from './budget.ts';
 
 // check：最近一次接入体检；baseline：完整体检时在干净副本里跑出的验收底子。
+// budget：执行预算（停滞/宽限/单次总上限分钟），缺省 20/5/120；旧登记没有这一字段。
 export type Project = { name: string; label?: string; repo: string; worktreeRoot: string; setup: string[]; verify: string[]; denyReadExtra: string[]; rules?: string;
-  check?: ProjectCheck; baseline?: { at: string; ok: boolean; steps: VerifyStep[] } };
+  check?: ProjectCheck; baseline?: { at: string; ok: boolean; steps: VerifyStep[] }; budget?: Budget };
 export function relativePath(path: string) {
   if (!path || isAbsolute(path) || path.split(/[\\/]/).includes('..') || path === '.') throw new Error(`路径必须在仓库内且不能包含 ..：${path}。请填写相对路径。`);
   return path;
@@ -23,6 +26,11 @@ export async function loadProject(name: string): Promise<Project> {
 }
 export async function listProjects() {
   return Promise.all((await readdir(paths().projects)).filter(n => n.endsWith('.json')).sort().map(n => loadProject(n.slice(0, -5))));
+}
+// 这件活实际生效的执行预算：登记里写了就校验着读（不合法抛中文错误，派活前据此拒绝），
+// 旧登记没有这一字段按 20/5/120 缺省。预算只能来自这里（项目登记/主人策略），题目、选手报告、环境变量都放宽不了。
+export function projectBudget(project: Pick<Project, 'budget'>): Budget {
+  return project.budget === undefined ? { ...DEFAULT_BUDGET } : checkBudget(project.budget);
 }
 // 给主人看的显示名（界面上的字要中文，项目名常是英文代号）：1–20 字，不含控制字符。
 export function checkLabel(label: string) {
@@ -40,7 +48,7 @@ export async function setProjectLabel(name: string, label: string) {
     return clean;
   });
 }
-export async function addProject(name: string, repo: string, options: Partial<Project>) {
+export async function addProject(name: string, repo: string, options: Partial<Project> & { createOnly?: boolean }) {
   safeName(name);
   const root = await realpath((await git(resolve(repo), ['rev-parse', '--show-toplevel'])).trim());
   const worktreeRoot = relativePath(options.worktreeRoot || '.claude/worktrees');
@@ -48,7 +56,16 @@ export async function addProject(name: string, repo: string, options: Partial<Pr
   const p: Project = { name, repo: root, worktreeRoot, setup: options.setup || [], verify: options.verify || [], denyReadExtra: options.denyReadExtra || [] };
   if (options.rules) p.rules = await realpath(resolve(options.rules));
   if (options.label !== undefined) p.label = checkLabel(options.label);
-  await withLock(paths().projects, () => writeJson(join(paths().projects, `${name}.json`), p));
+  if (options.budget !== undefined) p.budget = checkBudget(options.budget);
+  const file = join(paths().projects, `${name}.json`);
+  await withLock(paths().projects, async () => {
+    // 桌面登记用 createOnly：同名项目不能被悄悄覆盖（命令行仍保持原来的覆盖行为）。
+    if (options.createOnly) {
+      const exists = await stat(file).then(() => true).catch(error => { if (hasCode(error, 'ENOENT')) return false; throw error; });
+      if (exists) throw new Error(`已经登记过叫 ${name} 的项目，不能覆盖，请换一个名字。`);
+    }
+    await writeJson(file, p);
+  });
   return p;
 }
 export async function findProject(name?: string, cwd = process.cwd()) {

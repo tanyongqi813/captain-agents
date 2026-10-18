@@ -2,7 +2,7 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { codexPath } from './workers.ts';
+import { codexPath, kimiPath } from './workers.ts';
 import { platformIsolations } from './selfcheck.ts';
 import { channelNames, isolationOf, isolations } from './roster.ts';
 import type { Isolation, Who } from './roster.ts';
@@ -13,6 +13,9 @@ async function found(icon: Isolation): Promise<boolean> {
   if (process.env.XAGENTS_FAKE_WORKER) return true;
   if (icon === 'codex') {
     try { return (await stat(codexPath())).isFile(); } catch { return false; }
+  }
+  if (icon === 'kimi') {
+    try { return (await stat(kimiPath())).isFile(); } catch { return false; }
   }
   // 派活时这两家是按名字在搜索路径上找的；这里照同一条路径逐个文件夹看，不另起进程（看板数据每次刷新都要问一遍）。
   const name = icon === 'grok' ? 'grok' : 'cursor-agent';

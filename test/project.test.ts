@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { worktreePath } from '../src/core/project.ts';
+import { addProject, loadProject, worktreePath } from '../src/core/project.ts';
+import { ensureHome } from '../src/core/paths.ts';
 import { context, exec, root } from './helpers.ts';
 
 test('副本路径逐层检查父目录：内部链接允许，嵌套链接不能逃出仓库', async t => {
@@ -38,3 +39,17 @@ for (const missing of [true, false]) {
     assert.equal(found.stdout.trim(), '测试');
   });
 }
+
+test('addProject：桌面登记用 createOnly 拒绝覆盖同名项目，命令行仍按原样覆盖', async t => {
+  const c = await context(t), before = process.env.XAGENTS_HOME;
+  process.env.XAGENTS_HOME = c.home;
+  t.after(() => { if (before === undefined) delete process.env.XAGENTS_HOME; else process.env.XAGENTS_HOME = before; });
+  await ensureHome();
+  await addProject('测试', c.repo, { label: '第一次', worktreeRoot: '.worktrees', createOnly: true });
+  assert.equal((await loadProject('测试')).label, '第一次');
+  await assert.rejects(() => addProject('测试', c.repo, { label: '第二次', worktreeRoot: '.worktrees', createOnly: true }), /已经登记过/);
+  assert.equal((await loadProject('测试')).label, '第一次', '同名项目没被覆盖');
+  // 命令行原来就会重新登记并覆盖，行为保持不变。
+  await addProject('测试', c.repo, { label: '第二次', worktreeRoot: '.worktrees' });
+  assert.equal((await loadProject('测试')).label, '第二次');
+});

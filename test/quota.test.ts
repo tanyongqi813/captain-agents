@@ -96,7 +96,9 @@ test('三家互不影响，调用参数、协议、空目录与缓存正确；10
     const root = dirname(cmd.cwd!);
     assert.match(basename(root), /^cursor-usage-/); assert.equal(dirname(root), join(c.home, 'cache'));
     assert.deepEqual(cmd.env, { TERM: 'xterm-256color', CURSOR_CONFIG_DIR: join(root, 'state/config'), CURSOR_DATA_DIR: join(root, 'state/data') });
-    assert.deepEqual(cmd.writes, [{ afterMs: 6000, text: '/usage' }, { afterMs: 7500, text: '\r' }]);
+    assert.deepEqual(cmd.writes, [{ afterMs: 6000, text: '/usage' }, { afterMs: 7500, text: '\r' },
+      { afterMs: 20_000, text: '/usage' }, { afterMs: 21_500, text: '\r' },
+      { afterMs: 40_000, text: '/usage' }, { afterMs: 41_500, text: '\r' }]);
     assert.equal(cmd.graceMs, 3000); // 要比伪终端桥的收尾宽限（1.5 秒）长，桥才来得及让 cursor-agent 自己退出、删掉运行标记。
     return '未知界面';
   } };
@@ -144,6 +146,7 @@ test('各选手按传入停派线判断：五档含边界，force、未知和近
   }
   for (const who of whos.filter(w => vendorOf(w) !== 'deepseek')) for (const stop of quotaStops.filter(stop => stop !== null)) {
     const data = await snapshot(), bar = quotaBar(data, who)!;
+    if (!bar) continue;
     bar.used = stop - 0.1; assert.doesNotThrow(() => checkQuota(data, [{ who }], false, stop));
     bar.used = stop; assert.throws(() => checkQuota(data, [{ who }], false, stop), new RegExp(`已用 ${stop}%，到了设置里的停派线 ${stop}%`));
     assert.doesNotThrow(() => checkQuota(data, [{ who }], true, stop));

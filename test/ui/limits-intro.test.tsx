@@ -6,6 +6,7 @@ import { Stats } from '../../app/renderer/components/Pages.tsx';
 import { QuotaRing } from '../../app/renderer/ui/index.ts';
 import { quotaLevel } from '../../app/renderer/lib/quota.ts';
 import { INTRO_TEXT } from '../../src/core/intro.ts';
+import { defaultDeepseekEndpoint } from '../../src/core/deepseek-settings.ts';
 import type { SettingsPatch, Settings as Values } from '../../app/shared/ipc.ts';
 import { fixtureBridge, fixtureView } from './fixtures.tsx';
 
@@ -14,10 +15,12 @@ function setup(page: string) {
   localStorage.setItem('xa.settings-page', page);
   let current: Values = { keepAwake: true, notifications: true, appearance: 'system', openAtLogin: false, storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, workers: fixtureView().settings.workers, networkAllowed: false };
   const setSettings = vi.fn(async (patch: SettingsPatch) => { current = { ...current, ...patch } as Values; return structuredClone(current); });
+  const deepseekLogin = vi.fn(async () => {});
+  const deepseekModels = vi.fn(async () => ['relay-fast', 'relay-pro']);
   const copyIntro = vi.fn(async () => {});
-  window.xa = fixtureBridge({ getSettings: vi.fn(async () => structuredClone(current)), setSettings, copyIntro });
+  window.xa = fixtureBridge({ getSettings: vi.fn(async () => structuredClone(current)), setSettings, copyIntro, deepseekLogin, deepseekModels });
   render(<Settings close={() => {}} view={fixtureView()} />);
-  return { setSettings, copyIntro };
+  return { setSettings, copyIntro, deepseekLogin, deepseekModels };
 }
 
 test('选手与模型页最上面是“派活限制”：同时最多跑 1–12 件、额度停派线 50–90% 和不设限，点了整组两项一起存', async () => {
@@ -41,6 +44,26 @@ test('选手与模型页最上面是“派活限制”：同时最多跑 1–12 
   fireEvent.change(stop, { target: { value: '90' } });
   await waitFor(() => expect(setSettings).toHaveBeenLastCalledWith({ limits: { maxRunning: 3, quotaStop: 90 } }));
   expect(within(group).getByText('某家用到这里就不再派给它')).toBeTruthy();
+});
+
+test('DeepSeek 分组的编辑弹窗可配置中转地址、协议、模型 ID 和独立密钥', async () => {
+  const { setSettings, deepseekLogin, deepseekModels } = setup('workers');
+  const group = await screen.findByRole('region', { name: 'DeepSeek' });
+  fireEvent.click(within(group).getByRole('button', { name: '编辑' }));
+  const address = await screen.findByRole('textbox', { name: 'API 地址' });
+  expect((address as HTMLInputElement).value).toBe(defaultDeepseekEndpoint.baseUrl);
+  fireEvent.change(address, { target: { value: 'https://relay.example/v1/' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'API 协议' }), { target: { value: 'chat' } });
+  fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'relay-secret-123' } });
+  fireEvent.click(screen.getByRole('button', { name: '获取可用模型' }));
+  await waitFor(() => expect(deepseekModels).toHaveBeenCalledWith({ ...defaultDeepseekEndpoint, baseUrl: 'https://relay.example/v1/', wireApi: 'chat' }, 'relay-secret-123'));
+  expect(screen.getByText('已获取 2 个模型')).toBeTruthy();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Pro 模型 ID' }), { target: { value: 'relay-pro' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Flash 模型 ID' }), { target: { value: 'relay-fast' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(setSettings).toHaveBeenLastCalledWith({ deepseek: { baseUrl: 'https://relay.example/v1/', wireApi: 'chat', proModel: 'relay-pro', flashModel: 'relay-fast', offPeakOnly: false } }));
+  expect(deepseekLogin).toHaveBeenCalledWith('relay-secret-123');
+  expect(screen.queryByRole('dialog', { name: '编辑 DeepSeek' })).toBeNull();
 });
 
 test('额度环和额度卡的提醒色跟着停派线：到线琥珀、95% 起红，线以下灰', () => {

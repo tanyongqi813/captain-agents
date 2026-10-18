@@ -97,11 +97,11 @@ async function runProbe(mode: Isolation, options: { linkable?: boolean; proxy?: 
   return { probes, opened, closed, requests, packets, written, removed, made, flags, linked, executed, item };
 }
 
-for (const mode of ['codex', 'grok', 'cursor'] as Isolation[]) test(`${mode} 最终探针测 SSH、npmrc 和规定的登录文件，文件缺失算拿不准`, async () => {
+for (const mode of ['codex', 'grok', 'cursor', 'kimi'] as Isolation[]) test(`${mode} 最终探针测 SSH、npmrc 和规定的登录文件，文件缺失算拿不准`, async () => {
   const { probes, opened } = await runProbe(mode, { npmrc: 'ENOENT' });
   assert.ok(opened.includes(join(fakeHome, '.npmrc'))); assert.ok(opened.includes(join(fakeHome, '.ssh')));
   for (const name of expectedProbes(mode, false).filter(n => n.startsWith('login-'))) {
-    const path = { 'login-codex': join(fakeHome, '.codex/auth.json'), 'login-grok': join(fakeHome, '.grok/auth.json'), 'login-cursor': join(fakeHome, '.cursor/cli-config.json'), 'login-deepseek': deepseekHome() }[name];
+    const path = { 'login-codex': join(fakeHome, '.codex/auth.json'), 'login-grok': join(fakeHome, '.grok/auth.json'), 'login-cursor': join(fakeHome, '.cursor/cli-config.json'), 'login-kimi': join(fakeHome, '.kimi-code/credentials'), 'login-deepseek': deepseekHome() }[name];
     assert.ok(opened.includes(path!), name);
     assert.equal(probes.find(p => p.name === name)!.outcome, 'denied');
   }

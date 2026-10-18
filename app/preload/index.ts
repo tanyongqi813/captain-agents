@@ -33,6 +33,8 @@ const bridge: XaBridge = {
   chatRename: (id, title) => ipcRenderer.invoke(channels.chatRename, id, title),
   getSettings: () => ipcRenderer.invoke(channels.settingsGet),
   setSettings: patch => ipcRenderer.invoke(channels.settingsSet, patch),
+  deepseekLogin: key => ipcRenderer.invoke(channels.deepseekLogin, key),
+  deepseekModels: (endpoint, key) => ipcRenderer.invoke(channels.deepseekModels, endpoint, key),
   setNetworkAllowed: on => ipcRenderer.invoke(channels.networkAllowed, on),
   modelsRefresh: () => ipcRenderer.invoke(channels.modelsRefresh),
   modelsKeep: (...args: unknown[]) => ipcRenderer.invoke(channels.modelsKeep, ...args),
@@ -48,6 +50,10 @@ const bridge: XaBridge = {
     return () => ipcRenderer.removeListener(channels.open, listener);
   },
   getView: () => ipcRenderer.invoke(channels.getView) as Promise<View>,
+  projectChoose: () => ipcRenderer.invoke(channels.projectChoose),
+  projectRegister: (selectionId, input) => ipcRenderer.invoke(channels.projectRegister, selectionId, input),
+  planDispatch: input => ipcRenderer.invoke(channels.planDispatch, input),
+  planOpenSpec: input => ipcRenderer.invoke(channels.planSpec, input),
   onView(callback) {
     const listener = (_event: IpcRendererEvent, view: View) => callback(view);
     ipcRenderer.on(channels.view, listener);

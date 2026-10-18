@@ -38,7 +38,7 @@ export function parseTextModels(raw: string, provider: 'grok' | 'cursor'): Model
   return [...models.values()];
 }
 export async function queryModels(execute: QueryExecutor = executeQuery): Promise<ModelResult[]> {
-  return Promise.all(isolations.map(async provider => {
+  return Promise.all(isolations.filter(provider => provider !== 'kimi').map(async provider => {
     // “当前”= 派活工作台按选手、强度、快速版会实际启动的每一个模型名，全部来自选手清单。
     // DeepSeek 的模型不在 Codex 自带的列表里，这里不核对（简单版）；它的模型名以 roster.ts 里写明的核对结果为准。
     const current = launchModels().filter(m => isolationOf(m.who) === provider && vendorOf(m.who) === provider).map(m => ({ ...m, present: null as boolean | null }));
@@ -103,7 +103,7 @@ export async function refreshModelsWithBaseline(execute: QueryExecutor = execute
 }
 export function viewModels(config: ModelsConfig, cache: ModelsCache | null): ViewModels {
   return { at: cache?.at ?? null, channels: vendors.map(channel => {
-    const latest = channel === 'deepseek' ? undefined : cache?.channels[channel];
+    const latest = channel === 'deepseek' || channel === 'kimi' ? undefined : cache?.channels[channel];
     const known = whos.filter(who => vendorOf(who) === channel);
     const merged = new Map<string, DiscoveredModel>();
     for (const who of known) {
@@ -112,7 +112,7 @@ export function viewModels(config: ModelsConfig, cache: ModelsCache | null): Vie
     }
     // 名单以后出现同名项也不改变主人填写的强度。
     for (const m of latest?.models ?? []) if (!known.some(w => spec(w).model === m.model && config.extra[w]?.manual === true)) merged.set(m.model, m);
-    return { channel, name: channelNames[channel], icon: channel, discoverable: channel !== 'deepseek', at: latest?.at ?? null, error: latest?.error ?? null,
+    return { channel, name: channelNames[channel], icon: channel, discoverable: channel !== 'deepseek' && channel !== 'kimi', at: latest?.at ?? null, error: latest?.error ?? null,
       models: [...merged.values()].map(m => {
         const registered = known.find(w => spec(w).model === m.model);
         const who = registered ?? specFor(channel, m).who;

@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { context, root } from './helpers.ts';
 import { prepareRun, prunePackages, usePreparedRun } from '../src/core/run-package.ts';
 import { command, resumeCommand, selection } from '../src/core/workers.ts';
-import { codexPermissions, sandbox } from '../src/core/sandbox.ts';
+import { codexPermissions, cursorPersistPaths, sandbox } from '../src/core/sandbox.ts';
 import { jobDir } from '../src/core/paths.ts';
 import { createJob, readJob, updateJob } from '../src/core/job.ts';
 import type { Job } from '../src/core/job.ts';
@@ -113,6 +113,27 @@ test('旧权限无法完整识别、旧禁读被读例外覆盖、网络不符�
     assert.deepEqual(job, before);
     assert.deepEqual(await readdir(join(jobDir(job.id), 'runtime')), [original.runtime!.split('/').at(-1)]);
   }
+});
+
+test('Cursor 共享锁目录只加在 macOS 群聊续接轮；首轮、非群聊续接和其他新增可写路径都不放行', async t => {
+  const { job, first } = await setup(t, 'cursor-grok', { mode: 'workspace-write', chat: { id: 'chat-1' } });
+  const firstFile = JSON.parse(await readFile(join(jobDir(job.id), first.runtime, 'sandbox.json'), 'utf8'));
+  assert.ok(!firstFile.filesystem.allowWrite.some((path: string) => path.includes('cursor-agent-persist')));
+  const plain = await prepareRun({ ...job, chat: undefined }, '第二轮', { denyReadExtra: [] }, resume);
+  const plainFile = JSON.parse(await readFile(join(jobDir(job.id), plain.runtime, 'sandbox.json'), 'utf8'));
+  assert.ok(!plainFile.filesystem.allowWrite.some((path: string) => path.includes('cursor-agent-persist')));
+  const second = await prepareRun(job, '第二轮', { denyReadExtra: [] }, resume);
+  const settings = JSON.parse(await readFile(join(jobDir(job.id), second.runtime, 'sandbox.json'), 'utf8'));
+  const base = await sandbox(job, second.isolation);
+  const persist = await cursorPersistPaths();
+  assert.deepEqual(settings.filesystem.allowWrite, [...base.filesystem.allowWrite, ...persist]);
+  for (const shared of ['/tmp', '/private/tmp', '/private/var/folders']) assert.ok(!settings.filesystem.allowWrite.includes(shared), shared);
+  if (process.platform === 'darwin') assert.ok(persist.length > 0 && persist.every(path => /\/(?:private\/)?tmp\/cursor-agent-persist-\d+$/.test(path)));
+  else assert.deepEqual(persist, []);
+  const file = join(jobDir(job.id), job.runtime!, 'sandbox.json');
+  const original = JSON.parse(await readFile(file, 'utf8'));
+  await writeFile(file, JSON.stringify({ ...original, filesystem: { ...original.filesystem, allowWrite: [] } }));
+  await assert.rejects(prepareRun(job, '再一轮', { denyReadExtra: [] }, resume), /新增了可写位置/);
 });
 
 test('srt 未知规则、旧禁写丢失、新增可写位置都不能悄悄放行', async t => {

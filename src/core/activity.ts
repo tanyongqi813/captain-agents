@@ -140,6 +140,25 @@ export class StreamParser {
           this.usage = { read: count(u.input_tokens) + count(u.cache_read_input_tokens), cached: count(u.cache_read_input_tokens), out: count(u.output_tokens) }; this.revision++;
         }
       }
+    } else if (this.format === 'kimi') {
+      if (row.role === 'assistant') {
+        const s = text(row.content);
+        this.allText += s; this.tailText += s; this.add('say', s, at);
+        if (Array.isArray(row.tool_calls)) for (const value of row.tool_calls) {
+          const call = object(value), fn = object(call.function), id = call.id;
+          let input: Record<string, unknown> = {};
+          try { input = object(JSON.parse(text(fn.arguments))); } catch { /* 坏参数不影响后续日志 */ }
+          this.tool(id, false, at); this.tailText = '';
+          const name = text(fn.name);
+          if (name === 'Bash' || name.includes('Shell')) this.add('cmd', text(input.command), at);
+          else if (name.includes('Write') || name.includes('Edit')) this.add('edit', this.path(input.path) || this.path(input.file_path), at, false);
+          else this.add('read', this.input(input) || name, at, false);
+        }
+      }
+      if (row.role === 'tool') {
+        const id = text(row.tool_call_id) || text(row.id);
+        this.tool(id, true, at);
+      }
     } else {
       if (row.type === 'tool_call') {
         if (row.subtype === 'started' || row.subtype === 'completed') this.tool(row.call_id, row.subtype === 'completed', at);
@@ -190,7 +209,7 @@ export class StreamParser {
     for (const [id, span] of this.tools) if (span.to === undefined) this.tool(id, true, at);
   }
   result(final = '') {
-    const report = this.format === 'codex' ? final : this.format === 'grok' ? (this.tailText.trim() ? this.tailText : this.allText) : (this.tailText.trim() ? this.tailText : this.fallback);
+    const report = this.format === 'codex' ? final : this.format === 'grok' || this.format === 'kimi' ? (this.tailText.trim() ? this.tailText : this.allText) : (this.tailText.trim() ? this.tailText : this.fallback);
     return { report: report.trim(), usage: this.usage, activity: this.activity.slice(), lastActivityAt: this.activity.at(-1)?.at };
   }
 }

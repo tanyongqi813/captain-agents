@@ -15,6 +15,7 @@ import { Settings } from './components/Settings.tsx';
 import { UpdateDialog } from './components/Update.tsx';
 import { Detail } from './components/Detail.tsx';
 import { History, Stats } from './components/Pages.tsx';
+import { ProjectPlan } from './components/ProjectPlan.tsx';
 import { TopBar } from './components/TopBar.tsx';
 export function App() {
   const [view, setView] = useState<View | null>(null),
@@ -108,7 +109,7 @@ export function App() {
     const key = (e: KeyboardEvent) => {
       if (!modKey(e)) return;
       if (e.key === ',') { e.preventDefault(); setTarget(null); setSettings(true); }
-      else if (['1', '2', '3', '4'].includes(e.key)) {
+      else if (['1', '2', '3', '4', '5'].includes(e.key)) {
         e.preventDefault();
         go(PAGE_KEYS[Number(e.key) - 1]);
       } else if (e.key.toLowerCase() === 'r') {
@@ -171,9 +172,9 @@ export function App() {
         : <RunningCard key={e.target.kind + e.target.id} job={e.members[0]} workers={view.workers} typical={typical(e.members[0])} hue={jobHue(e.members[0].batch)} project={tag(e.members[0])} chat={chatCard(e) || undefined} open={open} />) : columns.queued.length ? null : <EmptyState>现在没有在跑的活</EmptyState>}</BoardColumn>
       <BoardColumn name="attention" title="验收中" count={columns.attention.length} color={columnColor(view, 'attention')}>{columns.attention.length ? columns.attention.map(e => <AttentionCard key={e.type + e.target.kind + e.target.id} entry={e} workers={view.workers} hue={entryHue(e)} project={tag(e.members[0])} open={open} />) : <EmptyState>没有在验收的活</EmptyState>}</BoardColumn>
       <BoardColumn name="done" title="已完成" count={done.length} color={columnColor(view, 'done')} history={() => go('history')}>{done.length ? <DoneList entries={done} workers={view.workers} label={name => projectLabel(view, name)} open={open} showProject={name => { chooseProject(name); go('history'); }} onArchive={archiveProject} /> : <EmptyState>最近 24 小时没有完成的活</EmptyState>}</BoardColumn>
-    </div> : position.page === 'collab' ? <Chat view={view} selected={chatId} select={selectChat} open={open} notify={showToast} dismiss={dismissToast} /> : position.page === 'history' ? <History view={view} rows={columns.history} filter={position.filter} setFilter={filter => setPosition(p => ({
+    </div> : position.page === 'plan' ? <ProjectPlan view={view} notify={showToast} /> : position.page === 'collab' ? <Chat view={view} selected={chatId} select={selectChat} open={open} notify={showToast} dismiss={dismissToast} /> : position.page === 'history' ? <History view={view} rows={columns.history} filter={position.filter} setFilter={filter => setPosition(p => ({
           ...p,
           filter
         }))} project={historyProject} setProject={chooseProject} now={now} open={open} onUnarchive={unarchiveProject} /> : <Stats view={view} />}
-  </main>{toast && <Toast message={toast} onClose={() => dismissToast(toast.id)} />}</div>{shown && <Detail target={shown} view={view} entries={groups} order={unique} colors={colors} open={open} close={close} />}{settings && <Settings close={closeSettings} view={view} />}<UpdateDialog /></>;
+  </main>{toast && <Toast message={toast} onClose={() => dismissToast(toast.id)} />}</div>{shown && <Detail target={shown} view={view} entries={groups} order={unique} colors={colors} open={open} close={close} />}{settings && <Settings close={closeSettings} view={view} notify={showToast} />}<UpdateDialog /></>;
 }

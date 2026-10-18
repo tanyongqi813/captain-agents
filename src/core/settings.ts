@@ -9,6 +9,8 @@ import { readOptional, withLock, writeJson } from './fsx.ts';
 import { effectiveWorkers, validateWorkersPatch } from './policy.ts';
 import type { WorkersPolicy } from './policy.ts';
 import { relativePath } from './project.ts';
+import { deepseekEndpoint, effectiveDeepseekEndpoint } from './deepseek-settings.ts';
+import type { DeepseekEndpoint } from './deepseek-settings.ts';
 
 // 外观：跟随系统、浅色、深色；缺省或写坏了都按跟随系统。
 export const appearances = ['system', 'light', 'dark'] as const;
@@ -19,7 +21,7 @@ const PROJECT_NAME = /^[\p{L}\p{N}_-]+$/u;
 const isArchived = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 200
   && value.every(n => typeof n === 'string' && n.length <= 64 && n !== '.' && n !== '..' && PROJECT_NAME.test(n));
 const tidyArchived = (names: string[]) => [...new Set(names)].sort((a, b) => a.localeCompare(b, 'zh-CN'));
-export type Settings = { keepAwake: boolean; notifications: boolean; appearance: Appearance; storage: Storage; limits: Limits; archivedProjects: string[]; columns?: Record<string, string>; workers: WorkersPolicy; networkAllowed: boolean; models: ModelsConfig };
+export type Settings = { keepAwake: boolean; notifications: boolean; appearance: Appearance; storage: Storage; limits: Limits; archivedProjects: string[]; columns?: Record<string, string>; workers: WorkersPolicy; networkAllowed: boolean; models: ModelsConfig; deepseek: DeepseekEndpoint };
 export type SettingsPatch = Partial<Omit<Settings, 'workers' | 'networkAllowed' | 'models'>> & { workers?: WorkersPolicy };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const columns = (value: unknown): value is Record<string, string> => object(value) && Object.values(value).every(v => typeof v === 'string');
@@ -60,6 +62,7 @@ function settings(config: Record<string, unknown>): Settings {
     limits: isLimits(config.limits) ? config.limits : { ...defaultLimits },
     archivedProjects: isArchived(config.archivedProjects) ? tidyArchived(config.archivedProjects) : [],
     workers: effectiveWorkers(config.workers), models,
+    deepseek: effectiveDeepseekEndpoint(config.deepseek),
     // 联网总开关：缺省或写坏了都按关，旧的项目 network 字段忽略。
     networkAllowed: config.networkAllowed === true,
     ...(columns(colors) ? { columns: colors } : {}),
@@ -95,7 +98,8 @@ export async function writeSettings(update: SettingsPatch | ((current: Settings)
     if (object(patch) && Object.hasOwn(patch, 'autoUpdateCheck')) throw new Error('自动检查更新不能通过普通设置补丁修改，请使用专门的开关。');
     if (object(patch) && (Object.hasOwn(patch, 'network') || Object.hasOwn(patch, 'networkAllowed'))) throw new Error('联网不能通过普通设置补丁修改，请使用桌面应用的联网总开关。');
     if (!object(patch) || Object.entries(patch).some(([key, value]) =>
-      key === 'workers' ? false : key === 'columns' ? !columns(value) : key === 'appearance' ? !isAppearance(value) : key === 'storage' ? !isStorage(value) : key === 'limits' ? !isLimits(value) : key === 'archivedProjects' ? !isArchived(value) : !['keepAwake', 'notifications'].includes(key) || typeof value !== 'boolean')) {
+      key === 'workers' ? false : key === 'deepseek' ? (() => { try { deepseekEndpoint(value); return false; } catch { return true; } })()
+        : key === 'columns' ? !columns(value) : key === 'appearance' ? !isAppearance(value) : key === 'storage' ? !isStorage(value) : key === 'limits' ? !isLimits(value) : key === 'archivedProjects' ? !isArchived(value) : !['keepAwake', 'notifications'].includes(key) || typeof value !== 'boolean')) {
       throw new Error(`设置不合法：防休眠和通知须为开或关，外观须为跟随系统、浅色或深色，自动清理须为开或关、天数只能 7、14、30，同时最多跑 1–${LIMIT_CAPS.maxRunning} 件、额度停派线只能 50%、60%、70%、80%、90%、不设限，归档项目须为项目名列表，列颜色须为文字映射。`);
     }
     const workersPatch = Object.hasOwn(patch, 'workers') ? validateWorkersPatch(patch.workers) : {};
@@ -106,8 +110,9 @@ export async function writeSettings(update: SettingsPatch | ((current: Settings)
       if (available.length && !available.some(who => workers[who]?.enabled)) throw new Error('至少要有一位选手开着，请先打开另一位选手。');
     }
     const archived = patch.archivedProjects ? { archivedProjects: tidyArchived(patch.archivedProjects) } : {};
+    const deepseek = patch.deepseek ? { deepseek: deepseekEndpoint(patch.deepseek) } : {};
     const { network: _network, ...retained } = config;
-    await writeJson(join(paths().home, 'config.json'), { ...retained, ...current, ...patch, ...archived, workers });
+    await writeJson(join(paths().home, 'config.json'), { ...retained, ...current, ...patch, ...archived, ...deepseek, workers });
   });
 }
 
@@ -218,7 +223,7 @@ export async function keepModels(channelValue: unknown, modelValues: unknown, dr
     const config = await readConfig();
     const current = settings(config);
     const cache = await readModelsCache();
-    const latest = channel === 'deepseek' ? [] : cache?.channels[channel]?.models ?? [];
+    const latest = channel === 'deepseek' || channel === 'kimi' ? [] : cache?.channels[channel]?.models ?? [];
     const extra = { ...current.models.extra };
     const manualWhos = whos.filter(w => vendorOf(w) === channel && extra[w]?.manual === true);
     if (dropManual.some(m => !manualWhos.some(w => spec(w).model === m))) throw new Error('明确不保留的模型必须是这一家已有的手动模型。');
@@ -245,7 +250,7 @@ export async function keepModels(channelValue: unknown, modelValues: unknown, dr
     for (const who of chosen) dropped.delete(who);
     if (![...whos, ...chosen].some(who => !dropped.has(who))) throw new Error('至少保留一位选手，请先保留另一位。');
     const next: ModelsConfig = { extra, dropped: [...dropped], seen: { ...current.models.seen,
-      [channel]: channel === 'deepseek' ? whos.filter(w => vendorOf(w) === channel).map(w => spec(w).model) : latest.map(m => m.model) } };
+      [channel]: channel === 'deepseek' || channel === 'kimi' ? whos.filter(w => vendorOf(w) === channel).map(w => spec(w).model) : latest.map(m => m.model) } };
     await writeJson(join(paths().home, 'config.json'), { ...config, models: next });
     loadRoster(next.extra, next.dropped);
     setModelsCatalog(cache);

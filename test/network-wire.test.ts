@@ -38,7 +38,10 @@ test('关网的 Codex 权限表和 srt 设置与改动前快照逐字相同；�
   const c = await setup(t);
   // 快照在本次修改前生成；只替换家目录和登记处，保留原字节次序。
   const baseline = JSON.parse(await readFile(join(root, 'test/fixtures/network-off.json'), 'utf8'));
-  const normalize = (v: unknown) => JSON.stringify(v).replaceAll(c.home, '<registry>').replaceAll(homedir(), '<home>');
+  // Kimi 接入新增了自己的凭据目录；旧快照继续核对其余权限字节不变。
+  const normalize = (v: unknown) => JSON.stringify(v).replaceAll(c.home, '<registry>').replaceAll(homedir(), '<home>')
+    .replaceAll(',\\\"<home>/.kimi-code\\\"=\\\"deny\\\"', '')
+    .replaceAll('"~/.kimi-code",', '');
   for (const who of ['codex', 'grok', 'cursor-sonnet'] as const) for (const mode of ['read-only', 'workspace-write'] as const) {
     const j = { ...job(who), mode };
     if (who === 'codex') {

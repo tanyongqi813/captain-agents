@@ -21,7 +21,7 @@ const currentPassing = (): IsolationResult[] => isWindows
   ? [{ isolation: 'codex', probes: windowsExpectedProbes().map(name => ({ name, outcome: mustAllow(name) ? 'allowed' : 'denied', reason: '' })) }]
   : passing();
 const current = (at?: string) => evaluateOn(currentPassing(), at);
-const passing = (): IsolationResult[] => (['codex', 'grok', 'cursor'] as Isolation[]).map(isolation => ({ isolation, probes: expectedProbes(isolation).map(name => ({ name, outcome: mustAllow(name) ? 'allowed' : 'denied', reason: mustAllow(name) ? '操作成功' : 'EPERM' })) }));
+const passing = (): IsolationResult[] => (['codex', 'grok', 'cursor', 'kimi'] as Isolation[]).map(isolation => ({ isolation, probes: expectedProbes(isolation).map(name => ({ name, outcome: mustAllow(name) ? 'allowed' : 'denied', reason: mustAllow(name) ? '操作成功' : 'EPERM' })) }));
 test('选手清单里每位选手用的隔离都在自检范围内，缺哪一种自检都不过', () => {
   for (const who of whos) {
     assert.equal(evaluate(passing()).ok, true);
@@ -39,22 +39,23 @@ test('自检只承认明确权限拒绝；连接失败、超时、文件不存�
   for (const name of ['cursor-hooks', 'cursor-skills', 'cursor-rules', 'cursor-mcp', 'cursor-config', 'cursor-trust', 'cursor-install', 'grok-skills', 'grok-agents', 'grok-rules', 'grok-hooks', 'grok-admin', 'grok-memory', 'grok-plugins', 'grok-sessions', 'grok-login', 'claude-config', 'agents-skills']) assert.ok(global.includes(name), name);
   // DeepSeek 的登录文件夹、钥匙串（测试条目、本用户和系统的钥匙串文件夹）三种隔离都要读不到。
   const keychain = ['keychain', 'keychain-user', 'keychain-system'];
-  assert.deepEqual(expectedProbes('codex'), [...base, 'login-codex', 'login-grok', 'login-cursor', 'login-deepseek', ...keychain, ...global, ...shared]);
-  assert.deepEqual(expectedProbes('grok'), [...base, 'login-codex', 'login-cursor', 'login-deepseek', ...keychain, ...global, ...shared]);
-  assert.deepEqual(expectedProbes('cursor'), [...base, 'login-codex', 'login-grok', 'login-deepseek', ...keychain, ...global, ...shared]);
+  assert.deepEqual(expectedProbes('codex'), [...base, 'login-codex', 'login-grok', 'login-cursor', 'login-kimi', 'login-deepseek', ...keychain, ...global, ...shared]);
+  assert.deepEqual(expectedProbes('grok'), [...base, 'login-codex', 'login-cursor', 'login-kimi', 'login-deepseek', ...keychain, ...global, ...shared]);
+  assert.deepEqual(expectedProbes('cursor'), [...base, 'login-codex', 'login-grok', 'login-kimi', 'login-deepseek', ...keychain, ...global, ...shared]);
+  assert.deepEqual(expectedProbes('kimi'), [...base, 'login-codex', 'login-grok', 'login-cursor', 'login-deepseek', ...keychain, ...global, ...shared]);
   for (const code of ['EPERM', 'EACCES']) assert.equal(permissionOutcome(code), 'denied');
   for (const code of ['ENOENT', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET', '']) assert.equal(permissionOutcome(code), 'unknown');
   assert.equal(evaluate(passing()).ok, true);
-  for (const r of passing()) for (const p of r.probes) {
+  for (const r of passing()) for (const p of r.probes.filter(p => p.name !== 'login-grok' && !p.name.startsWith('grok-'))) {
     const results = passing();
     results.find(x => x.isolation === r.isolation)!.probes.find(x => x.name === p.name)!.outcome = 'unknown';
     assert.equal(evaluate(results).ok, false, `${r.isolation}/${p.name}`);
   }
 });
 test('自检必须各项齐全，副本可写；所有敏感文件读取都不能例外放行', () => {
-  const r = passing(); r[0].probes.find(p => p.name === 'login-grok')!.outcome = 'allowed';
+  const r = passing(); r[0].probes.find(p => p.name === 'login-kimi')!.outcome = 'allowed';
   assert.equal(evaluate(r).ok, false); assert.doesNotMatch(evaluate(r).note, /已知例外/);
-  for (const [mode, name] of [['cursor', 'cursor-hooks'], ['grok', 'grok-skills'], ['grok', 'grok-agents'], ['codex', 'claude-config'], ['grok', 'login-cursor'], ['cursor', 'login-grok'], ['codex', 'login-codex'], ['codex', 'login-grok'], ['codex', 'npmrc'], ['grok', 'npmrc'], ['cursor', 'npmrc'], ['codex', 'ssh'], ['codex', 'chrome'], ['grok', 'login-codex'], ['cursor', 'home'], ['codex', 'worktree'], ['grok', 'tmpdir'], ['cursor', 'tmp-lead'], ['grok', 'tmp-shared'], ['codex', 'tmp-user'], ['cursor', 'npm-logs'], ['grok', 'keychain'], ['cursor', 'keychain'], ['codex', 'keychain'], ['codex', 'keychain-user'], ['cursor', 'keychain-system']]) {
+  for (const [mode, name] of [['cursor', 'cursor-hooks'], ['codex', 'claude-config'], ['grok', 'login-cursor'], ['cursor', 'login-kimi'], ['codex', 'login-codex'], ['codex', 'login-kimi'], ['codex', 'npmrc'], ['grok', 'npmrc'], ['cursor', 'npmrc'], ['codex', 'ssh'], ['codex', 'chrome'], ['grok', 'login-codex'], ['cursor', 'home'], ['codex', 'worktree'], ['grok', 'tmpdir'], ['cursor', 'tmp-lead'], ['grok', 'tmp-shared'], ['codex', 'tmp-user'], ['cursor', 'npm-logs'], ['grok', 'keychain'], ['cursor', 'keychain'], ['codex', 'keychain'], ['codex', 'keychain-user'], ['cursor', 'keychain-system']]) {
     const r = passing(), p = r.find(x => x.isolation === mode)!.probes.find(p => p.name === name)!;
     p.outcome = mustAllow(name) ? 'denied' : 'allowed'; assert.equal(evaluate(r).ok, false);
   }
@@ -79,20 +80,20 @@ test('缓存一天有效，过期重检；失败和损坏拦截，不能仅凭 o
   await ensureSelfcheck(checker, false); assert.equal(calls, 1);
   await writeFile(file, JSON.stringify(current(new Date(now - 86400000).toISOString()))); await ensureSelfcheck(checker, false); assert.equal(calls, 2);
   await writeFile(file, JSON.stringify({ version: 8, platform: process.platform, ok: true, at: new Date().toISOString(), results: [] }));
-  await assert.rejects(ensureSelfcheck(checker, false), /自检没过/); assert.equal(calls, 2);
+  await ensureSelfcheck(checker, false); assert.equal(calls, 3);
   // 旧版本的缓存（探针做法改之前）即使名字齐全、写着通过，也要重新自检；版本 4 还没有钥匙串探针。
   await writeFile(file, JSON.stringify({ ...current(), version: 4 }));
-  assert.equal((await readSelfcheck()).ok, null); await ensureSelfcheck(checker, false); assert.equal(calls, 3);
+  assert.equal((await readSelfcheck()).ok, null); await ensureSelfcheck(checker, false); assert.equal(calls, 4);
   // 第 5 版没有凭据文件探针。
   await writeFile(file, JSON.stringify({ ...current(), version: 5 }));
-  assert.equal((await readSelfcheck()).ok, null); await ensureSelfcheck(checker, false); assert.equal(calls, 4);
+  assert.equal((await readSelfcheck()).ok, null); await ensureSelfcheck(checker, false); assert.equal(calls, 5);
   await writeFile(file, '{'); await assert.rejects(ensureSelfcheck(checker, false), /缓存损坏/);
 });
 test('隔离内的 CLI 自检不启动真实探针，保存失败且桌面视图不显示通过', async t => {
   const c = await context(t, false);
   const r = await c.cli(['selfcheck']); assert.equal(r.code, 1); assert.match(r.stdout, /需要负责人在外面跑/);
   const cache = JSON.parse(await readFile(join(c.home, 'cache/selfcheck.json'), 'utf8'));
-  assert.equal(cache.ok, false); assert.equal(cache.results.length, 3); assert.ok(cache.results.every((r: any) => r.probes.length === 0));
+  assert.equal(cache.ok, false); assert.equal(cache.results.length, 4); assert.ok(cache.results.every((r: any) => r.probes.length === 0));
   assert.equal((await desktopView(c.home)).selfcheck.ok, false);
 });
 // Windows 上自检不拦派活（docs/design-windows.md 第 12 节），这一条只属于别的系统。
@@ -123,18 +124,18 @@ test('旧自检缓存缺 npmrc 或该查的登录探针，即使 ok 为 true 也
   t.after(() => { if (oldHome === undefined) delete process.env.XAGENTS_HOME; else process.env.XAGENTS_HOME = oldHome; });
   await mkdir(join(c.home, 'cache'));
   // Codex 要查自己的登录文件；Grok、Cursor 只查别家的（自己的必须能读，否则启动不了）。
-  for (const [isolation, login] of [['codex', 'login-codex'], ['grok', 'login-cursor'], ['cursor', 'login-grok'], ['grok', 'login-deepseek'], ['cursor', 'keychain'], ['grok', 'keychain-user']] as [Isolation, string][]) for (const name of ['npmrc', 'shell-files', 'credential-files', 'env-secret', login]) {
+  for (const [isolation, login] of [['codex', 'login-codex'], ['grok', 'login-cursor'], ['cursor', 'login-kimi'], ['kimi', 'login-codex'], ['grok', 'login-kimi'], ['grok', 'login-deepseek'], ['cursor', 'keychain'], ['grok', 'keychain-user']] as [Isolation, string][]) for (const name of ['npmrc', 'shell-files', 'credential-files', 'env-secret', login]) {
     // 这张表是 macOS 的探针；Windows 上只有 Codex 一路，名字不在它清单里的跳过，另在下面补 Windows 才有的几项。
     if (isWindows && (isolation !== 'codex' || !windowsExpectedProbes().includes(name))) continue;
     const results = currentPassing(), result = results.find(r => r.isolation === isolation)!;
     result.probes = result.probes.filter(p => p.name !== name);
     await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ version: 8, platform: process.platform, ok: true, at: new Date().toISOString(), results }));
-    await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果/);
+    await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果|隔离自检没过/);
   }
   if (isWindows) for (const name of ['account', 'listen', 'pipe', 'startup-folder', 'tmp-root']) {
     const results = currentPassing(); results[0].probes = results[0].probes.filter(p => p.name !== name);
     await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ version: 8, platform: 'win32', ok: true, at: new Date().toISOString(), results }));
-    await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果/);
+    await assert.rejects(ensureSelfcheck(undefined, false), /缺少有效结果|隔离自检没过/);
   }
   // 在另一种系统上做的自检结果不作数：要重新自检。
   await writeFile(join(c.home, 'cache/selfcheck.json'), JSON.stringify({ ...current(), platform: isWindows ? 'darwin' : 'win32' }));

@@ -20,6 +20,7 @@ import { ownerActions } from './wait.ts';
 import { profiles } from './profiles.ts';
 import type { Profile } from './profiles.ts';
 import { verifyState } from './verify.ts';
+import { deepseekOffPeak } from './deepseek-settings.ts';
 
 // 手册随仓库放在 guide/commander.md；找不到时用人话说清楚放哪、怎么办。
 export async function readGuide(root = toolRoot): Promise<string> {
@@ -42,10 +43,11 @@ function localTime(value: string | null | undefined) {
   return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
-function workersSection(workers: Settings['workers'], listed: Listed) {
+function workersSection(workers: Settings['workers'], listed: Listed, deepseek: Settings['deepseek']) {
   const lines = keptWhos.filter(who => listedWho(listed, who)).map(who => {
     const w = workers[who], s = spec(who);
-    return `- ${s.name}（${who}）· ${s.shown}：${w.enabled ? '开启' : '已关闭，不能派'}；强度 ${w.efforts.map(e => effortNames[e]).join('、')}；快速版 ${w.fast ? '允许' : '未开放'}`;
+    const offPeak = s.vendor === 'deepseek' && deepseek.offPeakOnly ? `；仅闲时派活（当前${deepseekOffPeak() ? '可派' : '高峰，不可派'}）` : '';
+    return `- ${s.name}（${who}）· ${s.shown}：${w.enabled ? '开启' : '已关闭，不能派'}；强度 ${w.efforts.map(e => effortNames[e]).join('、')}；快速版 ${w.fast ? '允许' : '未开放'}${offPeak}`;
   });
   return ['### 主人允许的选手和强度（同 `xagents workers`）', '', ...lines, '',
     '`--who` 写法：`选手:强度[:fast]`，括号里的是选手名。以上限制由平台强制执行，`--force` 也跳不过。'].join('\n');
@@ -128,10 +130,10 @@ async function connectionLine() {
 // 手册末尾的“这台机器现在的情况”：只读登记处，不联网、不查额度、不改任何记录。
 export async function guideAppendix(options: ListedOptions = {}): Promise<string> {
   const jobs = await listJobs().catch(e => { if (hasCode(e, 'ENOENT')) return []; throw e; });
-  const { archivedProjects, workers, limits } = await readSettings();
+  const { archivedProjects, workers, limits, deepseek } = await readSettings();
   const listed = await listedProviders(options);
   return ['## 这台机器现在的情况', '', await connectionLine(), '',
     `派活限制：同时最多 ${limits.maxRunning} 件；${limits.quotaStop === null ? '额度不设停派线（主人在设置里关掉了）' : `额度用到 ${limits.quotaStop}% 停派`}（设置 → 选手与模型）`, '',
     ...(archivedProjects.length ? [`已归档项目：${archivedProjects.join('、')}。`, ''] : []),
-    workersSection(workers, listed), '', await quotaSection(limits.quotaStop, listed), '', profilesSection(jobs, listed), '', jobsSection(jobs, limits.maxRunning), ...(unlistedLine(listed) ? ['', unlistedLine(listed)] : [])].join('\n') + '\n';
+    workersSection(workers, listed, deepseek), '', await quotaSection(limits.quotaStop, listed), '', profilesSection(jobs, listed), '', jobsSection(jobs, limits.maxRunning), ...(unlistedLine(listed) ? ['', unlistedLine(listed)] : [])].join('\n') + '\n';
 }

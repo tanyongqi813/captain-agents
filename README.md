@@ -2,7 +2,7 @@
 
 # 船长派活 · Captain Agents
 
-让一个 AI 当负责人，把编码的活派给你电脑上的 Codex、Grok、Cursor，还有借 Codex 跑的 DeepSeek。
+默认让 Codex 当负责人，把编码的活派给你电脑上的 Codex、Grok、Cursor、Kimi Code，还有借 Codex 跑的 DeepSeek。
 
 简体中文 · [English](README.en.md)
 
@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-如果你同时订了好几家 AI 编码工具，很自然会想：让 Claude 这样的 AI 当负责人，把活拆开分给别家去干，它只管审查和验收。
+如果你同时订了好几家 AI 编码工具，很自然会想：让 Codex 这样的 AI 当负责人，把活拆开分给别家去干，它只管审查和验收。
 
 真这么用上几天，麻烦就来了。谁在做什么、做到哪一步，全靠负责人那段对话记着，对话一压缩就断了。每次派活都得记得给别家的命令行加上限制，漏一次，它就能碰到不该碰的文件。选手说“测试都过了”，自己再跑一遍却不一定过。用久了，谁擅长修 bug、谁爱夸大结论、谁最省额度，也只剩个模糊印象。
 
@@ -46,7 +46,7 @@
 
 ## 装起来
 
-需要一台 Mac（目前只在苹果芯片上测过），Node.js 24 以上，pnpm。另外至少装好并登录一家：[Codex](https://github.com/openai/codex)（默认用 ChatGPT 应用自带的那份，可以用 `XAGENTS_CODEX` 指到别处）、Grok 命令行 `grok`、Cursor 命令行 `cursor-agent`。想用 DeepSeek 的话，装好 Codex 后运行 `xagents login deepseek`，粘贴 DeepSeek 的 API 钥匙（按用量扣钱）。钥匙由 Codex 存在派活工作台单独的文件夹里，不影响你自己的 ChatGPT 登录。
+需要一台 Mac（目前只在苹果芯片上测过），Node.js 24 以上，pnpm。另外至少装好并登录一家：[Codex](https://github.com/openai/codex)（默认用 ChatGPT 应用自带的那份，可以用 `XAGENTS_CODEX` 指到别处）、Grok 命令行 `grok`、Cursor 命令行 `cursor-agent`。想用 DeepSeek 的话，可先在“设置 → DeepSeek”填官方或中转站的接口地址、协议和模型 ID，再在终端运行 `xagents login deepseek` 粘贴对应的 API 钥匙。钥匙由 Codex 存在派活工作台单独的文件夹里，不写入普通设置，也不影响你自己的 ChatGPT 登录。
 
 ```sh
 git clone https://github.com/heihuzi-labs/captain-agents.git && cd captain-agents

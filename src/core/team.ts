@@ -55,6 +55,8 @@ export type ChannelMessage = {
 // verify / realCheck / decision：负责人对这一轮的验收和拍板。叫醒下一轮时从任务记录挪到这里（wake.ts 的 resumeMember），
 // 任务记录上只留“当前这一轮”的结果。
 export type RoundRecord = { n: number; started: string; ended: string; seconds: number; exit: number | null; usage?: Usage; state: string;
+  // 这一轮的收尾原因和停滞预警快照（docs/tasks/TASK-008.md）：续接时从任务记录挪到这里归档，当前轮清空，证据留在所属轮。
+  termination?: import('./job.ts').Job['termination']; stallWarning?: import('./job.ts').Job['stallWarning'];
   verify?: unknown; verifySkip?: import('./job.ts').Job['verifySkip']; realCheck?: import('./job.ts').Job['realCheck']; decision?: import('./job.ts').Job['decision'] };
 
 export const TEXT_MAX = 12_000; // 转交给对方的一份报告最多这么多字，多的截掉并注明。

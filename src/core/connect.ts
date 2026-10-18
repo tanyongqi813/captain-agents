@@ -109,7 +109,7 @@ export async function connectStatus(options?: ConnectOptions): Promise<ConnectSt
     note: '和 Claude 共用一份规矩', files: [shownFile('grok')], sharedWith: 'claude' };
   const cursor = (await inspect(home, 'cursor')).status;
   const dsh = (await inspect(home, 'dsh')).status;
-  return [claude, codex, grok, cursor, dsh];
+  return [codex, claude, grok, cursor, dsh];
 }
 
 // 主进程只收一个白名单名字；放在可独立测试的核心里，避免测试启动 Electron。
