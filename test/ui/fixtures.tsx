@@ -119,6 +119,10 @@ export const connectFixture = (): ConnectStatus[] => [
   { ai: 'dsh', name: 'DeepSeek Harness', state: 'off', note: '会写进 ~/.dsh/AGENTS.md 末尾（它跑 xagents 时要你点批准）', files: ['~/.dsh/AGENTS.md'] },
 ];
 export const fixtureBridge = (extra: Partial<XaBridge> = {}): XaBridge => ({
+  feishuStatus: vi.fn(async () => ({ connected: false, protected: true, pending: 0, lastSuccess: null, deliveryIssue: null })),
+  feishuConnect: vi.fn(async () => ({ connected: true, protected: true, pending: 0, lastSuccess: null, deliveryIssue: null })),
+  feishuTest: vi.fn(async () => ({ connected: true, protected: true, pending: 0, lastSuccess: null, deliveryIssue: null })),
+  feishuDisconnect: vi.fn(async () => ({ connected: false, protected: true, pending: 0, lastSuccess: null, deliveryIssue: null })),
   cliStatus: vi.fn(async () => 'unavailable' as const), cliInstall: vi.fn(async () => 'installed' as const),
   isolationFix: vi.fn(async () => {}),
   places: vi.fn(async () => ({ app: 'C:\\Apps\\captain-agents', data: 'C:\\Users\\me\\.xagents' })), openPlace: vi.fn(async () => {}),

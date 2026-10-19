@@ -26,6 +26,7 @@ import { noticeTitle, notificationTracker } from './notifications.ts';
 import type { Notice } from './notifications.ts';
 import { feishuCredentialStore, feishuNotificationScheduler } from './feishu-notifications.ts';
 import { autopilotActions } from './autopilot-bridge.ts';
+import { feishuActions } from './feishu-bridge.ts';
 import { createTray } from './tray.ts';
 import { readIcon } from './icons.ts';
 import { installIcons } from '../../src/core/icons.ts';
@@ -232,6 +233,15 @@ else {
     }
   });
   void app.whenReady().then(async () => {
+    const feishuStore = feishuCredentialStore(app.getPath('userData'), safeStorage);
+    const feishu = feishuActions(feishuStore, e2eHidden && !app.isPackaged ? async url => {
+      if (url !== 'https://open.feishu.cn/open-apis/bot/v2/hook/fixture-token-only') throw new Error('测试只接受固定替身目标。');
+      return { status: 200, body: '{"code":0}' };
+    } : undefined);
+    ipcMain.handle(channels.feishuStatus, (event, ...args: unknown[]) => { guard(event); return feishu.status(args); });
+    ipcMain.handle(channels.feishuConnect, (event, ...args: unknown[]) => { guard(event); return feishu.connect(args); });
+    ipcMain.handle(channels.feishuTest, (event, ...args: unknown[]) => { guard(event); return feishu.test(args); });
+    ipcMain.handle(channels.feishuDisconnect, (event, ...args: unknown[]) => { guard(event); return feishu.disconnect(args); });
     const autopilots = autopilotActions(async () => publish(await readDesktopView()));
     ipcMain.handle(channels.autopilotStart, (event, ...args: unknown[]) => { guard(event); return autopilots.start(args); });
     ipcMain.handle(channels.autopilotStop, (event, ...args: unknown[]) => { guard(event); return autopilots.stop(args); });
@@ -438,8 +448,8 @@ else {
       startNotifications: async () => {
         track = await notificationTracker(app.getPath('userData'), sendNotice);
         if (!e2eHidden) {
-          const credentials = feishuCredentialStore(app.getPath('userData'), safeStorage);
-          ownerNotifier = feishuNotificationScheduler({ credentials: credentials.read }, {
+          ownerNotifier = feishuNotificationScheduler({ credentials: feishuStore.read }, {
+            run: feishu.consume,
             onError: () => console.error('飞书通知本轮未完成，已保留待发事件。'),
           });
           ownerNotifier.start();

@@ -37,7 +37,7 @@ test('按厂家分组（Codex、Grok、Cursor、Kimi、DeepSeek），组内一�
   ];
   setup({ view }); await ready();
   // 分页：通用、选手与模型、看板颜色
-  expect(within(screen.getByRole('tablist', { name: '设置分页' })).getAllByRole('tab').map(t => t.textContent)).toEqual(['通用', '项目', '选手与模型', '联网', '看板颜色', '接入 AI']);
+  expect(within(screen.getByRole('tablist', { name: '设置分页' })).getAllByRole('tab').map(t => t.textContent)).toEqual(['通用', '项目', '选手与模型', '通知', '联网', '看板颜色', '接入 AI']);
   // 分组：按 roster 首次出现的顺序，Cursor 三个模型在同一组
   const groups = [...document.querySelectorAll<HTMLElement>('.setting-group')].filter(g => g.getAttribute('aria-label')); // 最上面的“派活限制”不是厂家组
   expect(groups.map(g => g.getAttribute('aria-label'))).toEqual(['Codex', 'Grok', 'Cursor', 'Kimi Code', 'DeepSeek']);
@@ -81,7 +81,7 @@ test('按厂家分组（Codex、Grok、Cursor、Kimi、DeepSeek），组内一�
 test('没有选手名单时不画“选手与模型”这一页（设置其余部分照常）', async () => {
   window.xa = fixtureBridge(); render(<Settings close={() => {}} />);
   await screen.findByLabelText('系统通知');
-  expect(within(screen.getByRole('tablist', { name: '设置分页' })).getAllByRole('tab').map(t => t.textContent)).toEqual(['通用', '联网', '看板颜色', '接入 AI']);
+  expect(within(screen.getByRole('tablist', { name: '设置分页' })).getAllByRole('tab').map(t => t.textContent)).toEqual(['通用', '通知', '联网', '看板颜色', '接入 AI']);
 });
 
 test('关掉、打开、改强度、开关快速版，都发出这位选手的整份设置', async () => {

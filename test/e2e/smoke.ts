@@ -15,6 +15,55 @@ import { alive } from '../../src/core/platform.ts';
 
 type Probe = { notices: Notice[]; tray(): { exists: boolean; title: string; running: number; attention: number; menu: string[]; template: boolean } };
 
+test('真实窗口飞书：连接替身、固定测试、重启保留与断开，凭据不回传', { timeout: 90_000 }, async t => {
+  const c = await context(t, false), userData = join(c.temp, 'electron');
+  const env = Object.fromEntries(Object.entries(c.env).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL;
+  let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
+  const launch = () => _electron.launch({ args: [resolve('out/main/index.js')], env: { ...env, XAGENTS_E2E: '1', XAGENTS_USER_DATA: userData } });
+  try {
+    app = await launch(); let page = await app.firstWindow();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('tab', { name: '通知', exact: true }).click();
+    const status = await page.evaluate(() => window.xa.feishuStatus()); assert.equal(status.protected, true, '真窗口验收需要系统安全存储可用，不允许明文替代');
+    await page.getByRole('button', { name: '连接机器人', exact: true }).click();
+    const connection = page.getByRole('dialog', { name: '连接飞书机器人', exact: true });
+    await mkdir(resolve('test/e2e/artifacts'), { recursive: true });
+    for (const v of [{ name: 'light', width: 1280, scheme: 'light' }, { name: 'dark', width: 1280, scheme: 'dark' }, { name: 'narrow', width: 900, scheme: 'light' }] as const) {
+      await page.setViewportSize({ width: v.width, height: 900 }); await page.emulateMedia({ colorScheme: v.scheme });
+      await page.screenshot({ animations: 'disabled', path: resolve(`test/e2e/artifacts/desktop-${v.name}-feishu-connect.png`) });
+    }
+    const fixtureUrl = 'https://open.feishu.cn/open-apis/bot/v2/hook/fixture-token-only';
+    await connection.getByLabel('Webhook 地址', { exact: true }).fill(fixtureUrl);
+    await connection.getByLabel('签名密钥', { exact: true }).fill('fixture-secret-only');
+    await connection.getByRole('button', { name: '保存连接', exact: true }).click(); await connection.waitFor({ state: 'hidden' });
+    const connected = await page.evaluate(() => window.xa.feishuStatus()); assert.equal(connected.connected, true);
+    assert.doesNotMatch(JSON.stringify(connected), /fixture-token|fixture-secret|webhook|sign|protected-credentials/);
+    await page.getByRole('button', { name: '发送测试通知', exact: true }).click();
+    await page.getByText(/测试通知已送达/).waitFor();
+    assert.doesNotMatch(await readFile(join(userData, 'protected-credentials/feishu.enc'), 'utf8'), /fixture-token|fixture-secret/);
+    for (const v of [{ name: 'light', width: 1280, scheme: 'light' }, { name: 'dark', width: 1280, scheme: 'dark' }, { name: 'narrow', width: 900, scheme: 'light' }] as const) {
+      await page.setViewportSize({ width: v.width, height: 900 }); await page.emulateMedia({ colorScheme: v.scheme });
+      await page.screenshot({ animations: 'disabled', path: resolve(`test/e2e/artifacts/desktop-${v.name}-feishu-settings.png`) });
+    }
+    await app.close(); app = await launch(); page = await app.firstWindow();
+    await page.getByRole('button', { name: '设置', exact: true }).waitFor();
+    assert.equal((await page.evaluate(() => window.xa.feishuStatus())).lastTest?.ok, true);
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('tab', { name: '通知', exact: true }).click();
+    await page.getByRole('button', { name: '替换连接', exact: true }).click();
+    assert.equal(await page.getByLabel('Webhook 地址', { exact: true }).inputValue(), '');
+    assert.equal(await page.getByLabel('签名密钥', { exact: true }).inputValue(), '');
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('button', { name: '断开连接', exact: true }).click();
+    await page.getByRole('alertdialog').waitFor();
+    await page.screenshot({ animations: 'disabled', path: resolve('test/e2e/artifacts/desktop-feishu-disconnect.png') });
+    await page.getByRole('button', { name: '确认断开', exact: true }).click();
+    await page.getByRole('alertdialog').waitFor({ state: 'hidden' });
+    assert.equal((await page.evaluate(() => window.xa.feishuStatus())).connected, false);
+  } finally { await app?.close(); }
+});
+
 test('真实窗口无人看守：明确启动、查看、整单停止、主人求助与截图', { timeout: 90_000 }, async t => {
   const c = await context(t), oldHome = process.env.XAGENTS_HOME;
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
@@ -172,7 +221,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.equal(preferences.contextIsolation, true); assert.equal(preferences.sandbox, true);
     assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
     assert.deepEqual(await page.evaluate(() => [typeof Reflect.get(window, 'require'), typeof Reflect.get(window, 'process'), typeof Reflect.get(window, '__xaE2E')]), ['undefined', 'undefined', 'undefined']);
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'autopilotStart', 'autopilotStop', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectCheck', 'projectChoose', 'projectChooseRules', 'projectOpen', 'projectRegister', 'projectRemove', 'projectUpdate', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'autopilotStart', 'autopilotStop', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'feishuConnect', 'feishuDisconnect', 'feishuStatus', 'feishuTest', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectCheck', 'projectChoose', 'projectChooseRules', 'projectOpen', 'projectRegister', 'projectRemove', 'projectUpdate', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
     // 接入 AI：后台只认四个名字，别的一律拒绝，不碰任何文件。
     for (const bad of ['../../etc', 'CLAUDE', '']) assert.match(await page.evaluate(async ai => { try { await window.xa.connect(ai as never); return 'ok'; } catch (e) { return String(e); } }, bad), /只收一个 AI 名字/);
     assert.match(await page.evaluate(async () => { try { await window.xa.disconnect('x' as never); return 'ok'; } catch (e) { return String(e); } }), /只收一个 AI 名字/);
@@ -472,6 +521,8 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
         await tab('看板颜色').focus();
         await page.keyboard.press('ArrowUp');
         assert.equal(await tab('联网').getAttribute('aria-selected'), 'true');
+        await page.keyboard.press('ArrowUp');
+        assert.equal(await tab('通知').getAttribute('aria-selected'), 'true');
         await page.keyboard.press('ArrowUp');
         assert.equal(await tab('选手与模型').getAttribute('aria-selected'), 'true');
         assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement!).outlineStyle), 'solid', '键盘操作时左栏有焦点框');

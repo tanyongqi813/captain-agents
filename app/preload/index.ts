@@ -5,6 +5,10 @@ import type { Destination, UpdateState, XaBridge } from '../shared/ipc.ts';
 import type { View } from '../../src/core/view-types.ts';
 
 const bridge: XaBridge = {
+  feishuStatus: (...args: unknown[]) => ipcRenderer.invoke(channels.feishuStatus, ...args),
+  feishuConnect: (...args: unknown[]) => ipcRenderer.invoke(channels.feishuConnect, ...args),
+  feishuTest: (...args: unknown[]) => ipcRenderer.invoke(channels.feishuTest, ...args),
+  feishuDisconnect: (...args: unknown[]) => ipcRenderer.invoke(channels.feishuDisconnect, ...args),
   autopilotStart: (...args: unknown[]) => ipcRenderer.invoke(channels.autopilotStart, ...args),
   autopilotStop: (...args: unknown[]) => ipcRenderer.invoke(channels.autopilotStop, ...args),
   cliStatus: (...args: unknown[]) => ipcRenderer.invoke(channels.cliStatus, ...args),

@@ -17,6 +17,7 @@ export const channels = {
   projectUpdate: 'xa:project-update', projectRemove: 'xa:project-remove', projectCheck: 'xa:project-check',
   planDispatch: 'xa:plan-dispatch', planSpec: 'xa:plan-spec',
   autopilotStart: 'xa:autopilot-start', autopilotStop: 'xa:autopilot-stop',
+  feishuStatus: 'xa:feishu-status', feishuConnect: 'xa:feishu-connect', feishuTest: 'xa:feishu-test', feishuDisconnect: 'xa:feishu-disconnect',
   decide: 'xa:decide', redo: 'xa:redo', stop: 'xa:stop', comment: 'xa:comment',
   teamSay: 'xa:team-say', teamStop: 'xa:team-stop',
   chatCreate: 'xa:chat-create', chatSay: 'xa:chat-say', chatStop: 'xa:chat-stop', chatRename: 'xa:chat-rename',
@@ -36,6 +37,8 @@ export type UpdateState =
   | { phase: 'ready'; version: string }
   | { phase: 'error'; message: string };
 export type CliStatus = 'installed' | 'missing' | 'other' | 'unavailable';
+export type FeishuStatus = { connected: boolean; protected: boolean; target?: string; issue?: string;
+  lastTest?: { at: string; ok: boolean; error?: string }; pending: number | null; lastSuccess: string | null; deliveryIssue: string | null };
 // 程序装在哪、数据（登记处）放在哪：只供设置页显示和“打开文件夹”。
 export type Places = { app: string; data: string };
 export type AppInfo = { version: string; update: UpdateState; autoCheck: boolean };
@@ -145,4 +148,8 @@ export type XaBridge = {
   planOpenSpec(input: PlanSpecInput): Promise<void>;
   autopilotStart(input: AutopilotInput): Promise<string>;
   autopilotStop(id: string): Promise<void>;
+  feishuStatus(): Promise<FeishuStatus>;
+  feishuConnect(input: { webhook: string; secret?: string }): Promise<FeishuStatus>;
+  feishuTest(): Promise<FeishuStatus>;
+  feishuDisconnect(): Promise<FeishuStatus>;
 };

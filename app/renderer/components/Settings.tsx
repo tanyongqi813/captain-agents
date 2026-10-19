@@ -13,6 +13,7 @@ import { TRAY } from '../ui/platform.ts';
 import { policyOf, WorkerSettings } from './WorkerSettings.tsx';
 import { CliSettings, IsolationSettings, PlaceSettings, UpdateSettings } from './Update.tsx';
 import { NetworkSettings } from './NetworkSettings.tsx';
+import { FeishuSettings } from './FeishuSettings.tsx';
 
 type Who = keyof Values['workers'];
 // 界面先显示的新值：选手的改动按选手合并，其余整项替换。
@@ -101,7 +102,7 @@ export function Settings({ close, view, notify }: { close(): void; view?: Pick<V
       if (mounted.current) setError('没能保存：' + errorReason(e));
     } finally { if (mounted.current) setNetworkSaving(false); }
   };
-  const pages = [{ id: 'general', label: '通用' }, ...(view ? [{ id: 'projects', label: '项目' }, { id: 'workers', label: '选手与模型' }] : []), { id: 'network', label: '联网' }, { id: 'colors', label: '看板颜色' }, { id: 'intro', label: '接入 AI' }];
+  const pages = [{ id: 'general', label: '通用' }, ...(view ? [{ id: 'projects', label: '项目' }, { id: 'workers', label: '选手与模型' }] : []), { id: 'notifications', label: '通知' }, { id: 'network', label: '联网' }, { id: 'colors', label: '看板颜色' }, { id: 'intro', label: '接入 AI' }];
   const page = pages.find(p => p.id === remembered)?.id ?? 'general';
   return <Modal size="lg" flush label="设置" title="设置" onClose={close}>
     <SideNavLayout label="设置分页" items={pages} value={page} onChange={id => { setRemembered(id); rememberPage(id); }}>
@@ -138,6 +139,7 @@ export function Settings({ close, view, notify }: { close(): void; view?: Pick<V
         </>}
         {page === 'projects' && view && <ProjectSettings projects={view.projects} notify={text => notify?.(text)} />}
         {page === 'network' && <NetworkSettings allowed={values.networkAllowed} saving={networkSaving} setAllowed={on => void allowNetwork(on)} />}
+        {page === 'notifications' && <><SettingGroup><SettingRow title="系统通知"><Switch label="系统通知" checked={values.notifications} onChange={notifications => void save({ notifications })} /></SettingRow></SettingGroup><FeishuSettings /></>}
         {page === 'intro' && <IntroPane />}
         {page === 'colors' && <>
           <SettingGroup>{([['running', '进行中'], ['attention', '验收中'], ['done', '已完成']] as const).map(([key, label]) =>
