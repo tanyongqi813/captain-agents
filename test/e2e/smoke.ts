@@ -243,7 +243,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       await page.screenshot({ animations: 'disabled', clip: { x: 0, y: 0, width, height: 48 }, path: join(output, `desktop-${theme}-topbar-${name}.png`) });
     };
     assert.equal(await application.evaluate(({ nativeTheme }) => nativeTheme.themeSource), 'system');
-    // 顶栏：分段“看板 历史 表现”，没有品牌字和“在跑”文字；看板不带件数角标（件数在“验收中”列头）；三家额度环，Cursor 用得最多的池 86% 是琥珀色。
+    // 顶栏五分页，无品牌字和件数角标；Cursor 只显示总额度 22%，子池 86% 仍在悬停提示里。
     const header = page.locator('header.top');
     assert.deepEqual(await header.getByRole('tab').allTextContents(), ['看板', '规划', '协作', '历史', '表现']);
     assert.equal(await page.getByRole('heading', { name: '验收中' }).count(), 1);
@@ -252,7 +252,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.ok(boardText!.includes('负责人在挑'));
     const headerText = await header.textContent();
     for (const word of ['派活工作台', '在跑', '件等你', '等你处理']) assert.ok(!headerText!.includes(word), `顶栏里不该有“${word}”`);
-    assert.deepEqual(await header.locator('.ring').evaluateAll(rings => rings.map(r => [r.getAttribute('data-used'), r.getAttribute('data-level')])), [['31', null], ['12', null], ['86', 'warn']]);
+    assert.deepEqual(await header.locator('.ring').evaluateAll(rings => rings.map(r => [r.getAttribute('data-used'), r.getAttribute('data-level')])), [['31', null], ['12', null], ['22', null]]);
     assert.match(await header.getByRole('button', { name: /各家额度/ }).getAttribute('title') ?? '', /Cursor（pro）\n总额度：22%\n自家模型池：8%\n其他模型池：86%/);
     // 顶栏和红黄绿按钮：顶栏高 48，控件在这一条里垂直居中（按钮位置由主进程按同样的高度摆，见 docs/ui-spec.md 第 11 节）。
     const place = async (selector: string) => header.locator(selector).first().evaluate(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; });
@@ -372,7 +372,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       await writeJson(quotaFile, JSON.parse(savedQuota));
       await page.waitForFunction(() => document.querySelector('.ring[data-used="31"]') !== null
         && document.querySelector('.ring[data-used="12"]') !== null
-        && document.querySelector('.ring[data-used="86"]')?.getAttribute('data-level') === null);
+        && document.querySelector('.ring[data-used="22"]')?.getAttribute('data-level') === null);
       await quotaStop.selectOption('90');
       await page.waitForFunction(async () => (await window.xa.getSettings()).limits.quotaStop === 90);
       await page.getByText('某家用到这里就不再派给它', { exact: true }).waitFor();

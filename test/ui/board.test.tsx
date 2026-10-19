@@ -289,7 +289,7 @@ test('空额度池可显示；80% 黄、95% 红；图标失败退回字母', asy
     plan: null,
     at: null,
     bars: [{
-      label: '额度',
+      label: '总额度',
       used: 95,
       reset: null
     }]

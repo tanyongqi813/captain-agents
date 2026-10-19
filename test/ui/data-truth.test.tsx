@@ -26,7 +26,7 @@ const quotaView = (quotaAt: Date | null = OLD) => {
   return v;
 };
 
-test('顶栏额度：整块悬停按家写各池百分比和数据时间（本地 MM-DD HH:mm），Cursor 环取用得最多的池；顶栏只写百分比、不写池名', async () => {
+test('顶栏额度：悬停写各池和数据时间，Cursor 环只取总额度；顶栏只写百分比、不写池名', async () => {
   show(quotaView());
   await screen.findByRole('tablist', { name: '页面' });
   const status = screen.getByRole('button', { name: /各家额度/ }), tip = status.title.split('\n\n');
@@ -38,9 +38,9 @@ test('顶栏额度：整块悬停按家写各池百分比和数据时间（本�
   expect(tip[4]).toBe('隔离正常\n自检通过');
   const ring = (name: string) => within(status).getByRole('img', { name: new RegExp('^' + name) });
   expect(ring('Codex').getAttribute('data-used')).toBe('63');
-  expect(ring('Cursor').getAttribute('data-used')).toBe('23');
-  expect(ring('Cursor').getAttribute('aria-label')).toBe('Cursor：其他模型池已用 23%');
-  expect(status.textContent).toBe('63%23%5%'); // 环旁只写百分比，不写池名（要求加百分比）
+  expect(ring('Cursor').getAttribute('data-used')).toBe('10');
+  expect(ring('Cursor').getAttribute('aria-label')).toBe('Cursor：总额度已用 10%');
+  expect(status.textContent).toBe('63%10%5%'); // 子池触顶不能冒充套餐整体触顶。
 });
 test('各家表现的额度卡：写数据时间；超过 30 分钟用提醒色；这次没查到写明', async () => {
   show(quotaView()); await toStats();
