@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { View } from '../../../src/core/view-types.ts';
 import type { PlanTask, TaskPlan } from '../../../src/core/task-plan.ts';
 import type { Effort } from '../../../src/core/roster.ts';
 import { effortNames } from '../../../src/core/policy.ts';
 import { errorReason } from '../lib/errors.ts';
 import { Button, CheckDot, Chip, EmptyState, Modal, SideNavLayout, WorkerIcon } from '../ui/index.ts';
+import { AutopilotDetail, AutopilotList, AutopilotStartDialog } from './Autopilot.tsx';
 
 // 规划页（docs/ui-spec.md 第 19 节，TASK-006）：按项目展示任务台账，只有真正可执行的 READY 任务能发起派发。
 // 数据只来自 View.plans，界面不读文件、不解析 Markdown；推荐执行者只是淡字展示，绝不预选选手。
@@ -104,7 +105,7 @@ function DispatchDialog({ view, project, task, close, notify }: {
   </Modal>;
 }
 
-function TaskRow({ plan, project, task, onDispatch }: { plan: TaskPlan; project: string; task: PlanTask; onDispatch(task: PlanTask): void }) {
+function TaskRow({ plan, project, task, onDispatch, onAutopilot }: { plan: TaskPlan; project: string; task: PlanTask; onDispatch(task: PlanTask): void; onAutopilot(task: PlanTask): void }) {
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const [specError, setSpecError] = useState('');
@@ -139,6 +140,7 @@ function TaskRow({ plan, project, task, onDispatch }: { plan: TaskPlan; project:
       <div className="plan-actions">
         {task.spec && <Button size="sm" disabled={opening} onClick={() => void openSpec()}>{opening ? '正在打开…' : '打开 Task Spec'}</Button>}
         {task.ready && <Button size="sm" variant="primary" onClick={() => onDispatch(task)}>派发</Button>}
+        {task.ready && <Button size="sm" onClick={() => onAutopilot(task)}>无人看守</Button>}
       </div>
       {task.spec && <p className="faint plan-spec-path">{task.spec}</p>}
       {specError && <p role="alert" className="notice notice-bad">{specError}</p>}
@@ -146,9 +148,17 @@ function TaskRow({ plan, project, task, onDispatch }: { plan: TaskPlan; project:
   </div>;
 }
 
-export function ProjectPlan({ view, notify }: { view: View; notify(text: string): void }) {
+export function ProjectPlan({ view, notify, focusRun, openJob }: { view: View; notify(text: string): void; focusRun?: string; openJob?(id: string): void }) {
   const [scope, setScope] = useState(readScope);
   const [dispatching, setDispatching] = useState<PlanTask | null>(null);
+  const [autopilotTask, setAutopilotTask] = useState<PlanTask | null>(null), [selectedRun, setSelectedRun] = useState<string | null>(focusRun ?? null);
+  useEffect(() => {
+    if (!focusRun) return;
+    setSelectedRun(focusRun);
+    const run = view.autopilots?.find(r => r.id === focusRun);
+    if (run) setScope(run.project);
+  }, [focusRun]);
+  const run = view.autopilots?.find(r => r.id === selectedRun);
   // 只列真的有任务台账（plan.present 为真，也就是仓库里确实有 docs/TASK_LIST.md）的已登记项目。
   const projects = view.projects.filter(project => view.plans[project.name]?.present === true);
   const current = projects.find(project => project.name === scope) ?? projects[0];
@@ -159,18 +169,25 @@ export function ProjectPlan({ view, notify }: { view: View; notify(text: string)
     return { id: 'p:' + project.name, label: project.label, badge: ready,
       note: total ? (ready ? `${ready} 项可执行` : '没有可执行的') : '台账是空的' };
   });
+  const detail = run && <AutopilotDetail run={run} close={() => setSelectedRun(null)} notify={notify} openJob={openJob} />;
   if (!projects.length) return <div className="page"><EmptyState>还没有带任务规划的项目</EmptyState>
-    <p className="sub plan-empty-note">登记的项目里出现 docs/TASK_LIST.md 后会显示在这里。</p></div>;
+    <p className="sub plan-empty-note">登记的项目里出现 docs/TASK_LIST.md 后会显示在这里。</p>
+    <AutopilotList runs={view.autopilots ?? []} open={setSelectedRun} />{detail}</div>;
   return <SideNavLayout className="plan-layout" label="项目" items={items} value={current ? 'p:' + current.name : ''} onChange={id => choose(id.slice(2))}>
     <div className="page"><h1>规划</h1>
       <p className="sub">{current?.label ?? ''} · 共 {plan?.tasks.length ?? 0} 项 · {plan?.ready.length ?? 0} 项可执行</p>
       {plan && plan.diagnostics.map((item, i) => <p key={i} role={item.level === 'error' ? 'alert' : 'status'}
         className={'notice ' + (item.level === 'error' ? 'notice-bad' : 'notice-warn')}>{item.message}</p>)}
       {plan && (plan.tasks.length
-        ? <div className="panel hgroup">{plan.tasks.map(task => <TaskRow key={task.id} plan={plan} project={plan.project} task={task} onDispatch={setDispatching} />)}</div>
+        ? <div className="panel hgroup">{plan.tasks.map(task => <TaskRow key={task.id} plan={plan} project={plan.project} task={task} onDispatch={setDispatching} onAutopilot={setAutopilotTask} />)}</div>
         : <EmptyState>任务台账里没有可识别的任务。</EmptyState>)}
       <p className="faint plan-foot">规划文档由负责人维护；任务做完后等待负责人评审、在文档里更新状态，工作台不会自动改。</p>
+      {view.autopilotProblem && <p role="alert" className="notice notice-warn">{view.autopilotProblem}</p>}
+      <AutopilotList runs={(view.autopilots ?? []).filter(r => r.project === current?.name)} open={setSelectedRun} />
     </div>
     {dispatching && current && <DispatchDialog view={view} project={current.name} task={dispatching} close={() => setDispatching(null)} notify={notify} />}
+    {autopilotTask && current && <AutopilotStartDialog view={view} pool={candidates(view)} project={current.name} taskId={autopilotTask.id}
+      close={() => setAutopilotTask(null)} started={id => { setAutopilotTask(null); setSelectedRun(id); notify(`已启动无人看守 ${id}`); }} />}
+    {detail}
   </SideNavLayout>;
 }

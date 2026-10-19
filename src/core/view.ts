@@ -25,6 +25,7 @@ import { teamTasks } from './team-tasks.ts';
 import type { View, ViewJob, ViewTeam, ViewChat, ViewProject } from './view-types.ts';
 import { readTaskPlan } from './task-plan.ts';
 import type { TaskPlan } from './task-plan.ts';
+import { autopilotView } from './autopilot-view.ts';
 
 // 只读取登记处；不修正任务、不查远程额度、不触发自检。
 // 已登记项目的高级配置（docs/tasks/TASK-003.md）：设置页编辑弹窗按它预填。某个字段读不出形状（旧登记、坏文件）就给缺省，不拖垮整份视图。
@@ -94,7 +95,8 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
     }));
   }
   const slimmed = jobs.filter(job => job.slimmed);
-  return { settings: { keepAwake, notifications, storage, limits, workers: policy },
+  return { settings: { keepAwake, notifications, storage, limits, workers: policy, networkAllowed: settings.networkAllowed },
+    ...await autopilotView(),
     dashboard: ranges.flatMap(range => ['', ...projectNames].map(project => dashboard(jobs, range, project))),
     storage: { slimmedJobs: slimmed.length, freedBytes: slimmed.reduce((sum, job) => sum + job.slimmed!.bytes, 0), due: slimCandidates(jobs, storage.days).length },
     updated: new Date().toISOString(), selfcheck: await readSelfcheck(),
@@ -122,6 +124,7 @@ function publicJob(job: Job, typical: number | null): ViewJob {
     rating: rating ? { ...(rating.score === undefined ? {} : { score: rating.score }), ...(rating.good ? { good: rating.good } : {}), ...(rating.improve ? { improve: rating.improve } : {}),
       ...(rating.external ? { external: rating.external } : {}), at: rating.at, tags: rating.tags.map(tag => ({ tag, kind: tagKind(tag) })) } : null,
     plan: job.plan ? { taskId: job.plan.taskId, spec: job.plan.spec } : null,
+    ...(job.autopilot ? { autopilot: { run: job.autopilot.run } } : {}),
     termination: job.termination ?? null,
     activity: job.activity ?? [], timing: job.timing ?? null };
 }

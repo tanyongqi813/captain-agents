@@ -9,8 +9,73 @@ import { writeJson } from '../../src/core/fsx.ts';
 import { addComment } from '../../src/core/comments.ts';
 import type { Job } from '../../src/core/job.ts';
 import type { Notice } from '../../app/main/notifications.ts';
+import { context, until } from '../helpers.ts';
+import { advance, createAutopilot, readAutopilot, updateAutopilot } from '../../src/core/autopilot.ts';
+import { alive } from '../../src/core/platform.ts';
 
 type Probe = { notices: Notice[]; tray(): { exists: boolean; title: string; running: number; attention: number; menu: string[]; template: boolean } };
+
+test('真实窗口无人看守：明确启动、查看、整单停止、主人求助与截图', { timeout: 90_000 }, async t => {
+  const c = await context(t), oldHome = process.env.XAGENTS_HOME;
+  let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
+  try {
+    process.env.XAGENTS_HOME = c.home;
+    await mkdir(join(c.repo, 'docs/tasks'), { recursive: true });
+    await writeFile(join(c.repo, '.gitignore'), '.worktrees/\n');
+    await writeFile(join(c.repo, 'docs/TASK_LIST.md'), '# 任务\n\n| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 |\n|---|---|---|---|---|---|\n| [TASK-001](tasks/TASK-001.md) | 窗口验收 | READY | P1 | High | 无 |\n');
+    await writeFile(join(c.repo, 'docs/tasks/TASK-001.md'), '# TASK-001\n\n- 状态：`READY`\n- 优先级：`P1`\n- 难度等级：`High`\n- 前置任务：无\n\n## 业务结果\n\n仅运行替身。\n\n## 验收标准\n\n1. 通过测试。\n');
+    await c.git(['add', '.']); await c.git(['commit', '-m', 'window fixture']);
+    const registered = await c.add(); assert.equal(registered.code, 0, registered.stderr);
+    const env = Object.fromEntries(Object.entries(c.env).filter((e): e is [string, string] => typeof e[1] === 'string'));
+    delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL;
+    app = await _electron.launch({ args: [resolve('out/main/index.js')], env: { ...env, XAGENTS_E2E: '1', XAGENTS_USER_DATA: join(c.temp, 'electron'), XA_TEST_MODE: 'hold' } });
+    const page = await app.firstWindow();
+    await page.getByRole('tab', { name: '规划', exact: true }).click();
+    await page.getByRole('button', { name: /TASK-001 窗口验收/ }).click();
+    await page.getByRole('button', { name: '无人看守', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '无人看守 TASK-001', exact: true });
+    assert.equal(await dialog.getByRole('button', { name: '启动无人看守', exact: true }).isEnabled(), false);
+    await dialog.getByLabel('执行者', { exact: true }).selectOption('codex');
+    await dialog.getByLabel('执行强度', { exact: true }).selectOption('high');
+    await dialog.getByLabel('独立审查者', { exact: true }).selectOption('codex-luna');
+    await dialog.getByLabel('审查强度', { exact: true }).selectOption('high');
+    await dialog.getByLabel('总预算', { exact: true }).selectOption('short');
+    await dialog.getByRole('checkbox', { name: '允许修改专用副本', exact: true }).click();
+    await dialog.getByRole('checkbox', { name: '确认联网快照', exact: true }).click();
+    await mkdir(resolve('test/e2e/artifacts'), { recursive: true });
+    for (const variant of [{ name: 'light', width: 1280, scheme: 'light' }, { name: 'dark', width: 1280, scheme: 'dark' }, { name: 'narrow', width: 900, scheme: 'light' }] as const) {
+      await page.setViewportSize({ width: variant.width, height: 900 }); await page.emulateMedia({ colorScheme: variant.scheme });
+      await page.screenshot({ path: resolve(`test/e2e/artifacts/desktop-${variant.name}-autopilot-start.png`) });
+    }
+    await dialog.getByRole('button', { name: '启动无人看守', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: /^无人看守详情/ }); await detail.waitFor();
+    const view = await page.evaluate(() => window.xa.getView()); const id = view.autopilots![0].id;
+    await until(() => c.jobs(), rows => rows.some(j => j.state === 'running'), 20_000);
+    const running = await c.jobs(), engine = await readAutopilot(id);
+    await detail.getByRole('button', { name: '停止无人看守', exact: true }).click();
+    await detail.getByRole('button', { name: '确认停止', exact: true }).click();
+    await until(() => readAutopilot(id), run => run.state === 'stopped');
+    await until(async () => !alive(engine.pid, engine.pidSince), Boolean, 10_000);
+    await until(async () => running.every(j => !alive(j.pid, j.pidSince) && !alive(j.workerPid, j.workerSince) && !alive(j.setupPid, j.setupSince)), Boolean, 10_000);
+    await detail.getByRole('button', { name: '关闭', exact: true }).last().click();
+    const help = await createAutopilot({ project: '测试', taskId: 'TASK-001', who: ['codex:high'], reviewer: 'codex-luna:high' });
+    await updateAutopilot(help.id, run => { advance(run, { kind: 'owner', code: 'recovery_budget' }); });
+    await page.getByRole('tab', { name: '看板', exact: true }).click();
+    await page.getByRole('button', { name: /TASK-001 .*无人看守详情/ }).waitFor();
+    await page.screenshot({ path: resolve('test/e2e/artifacts/desktop-autopilot-board-owner.png') });
+    await page.getByRole('button', { name: /TASK-001 .*无人看守详情/ }).click();
+    const owner = page.getByRole('dialog', { name: `无人看守详情 ${help.id}`, exact: true });
+    await owner.getByRole('alert').waitFor(); assert.match(await owner.textContent() ?? '', /需要主人处理/);
+    assert.match(await owner.textContent() ?? '', /飞书通知：已排队/);
+    assert.equal(await owner.getByRole('button', { name: '停止无人看守', exact: true }).count(), 0);
+    for (const variant of [{ name: 'light', width: 1280, scheme: 'light' }, { name: 'dark', width: 1280, scheme: 'dark' }, { name: 'narrow', width: 900, scheme: 'light' }] as const) {
+      await page.setViewportSize({ width: variant.width, height: 900 }); await page.emulateMedia({ colorScheme: variant.scheme });
+      await page.screenshot({ path: resolve(`test/e2e/artifacts/desktop-${variant.name}-autopilot-owner.png`) });
+    }
+  } finally {
+    await app?.close(); if (oldHome === undefined) delete process.env.XAGENTS_HOME; else process.env.XAGENTS_HOME = oldHome;
+  }
+});
 
 // 一张带透明边的小图标：只用来验证“图标能显示、缺图标时退回字母圆标”，不是任何一家的素材。
 function icon(size: number) {
@@ -105,7 +170,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.equal(preferences.contextIsolation, true); assert.equal(preferences.sandbox, true);
     assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
     assert.deepEqual(await page.evaluate(() => [typeof Reflect.get(window, 'require'), typeof Reflect.get(window, 'process'), typeof Reflect.get(window, '__xaE2E')]), ['undefined', 'undefined', 'undefined']);
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectCheck', 'projectChoose', 'projectChooseRules', 'projectOpen', 'projectRegister', 'projectRemove', 'projectUpdate', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.xa).sort()), ['appInfo', 'autopilotStart', 'autopilotStop', 'chatCreate', 'chatRename', 'chatSay', 'chatStop', 'cliInstall', 'cliStatus', 'comment', 'connect', 'connectStatus', 'copyIntro', 'decide', 'deepseekLogin', 'deepseekModels', 'disconnect', 'getSettings', 'getView', 'isolationFix', 'modelsAdd', 'modelsKeep', 'modelsRefresh', 'onOpen', 'onUpdate', 'onView', 'openPlace', 'places', 'planDispatch', 'planOpenSpec', 'projectCheck', 'projectChoose', 'projectChooseRules', 'projectOpen', 'projectRegister', 'projectRemove', 'projectUpdate', 'redo', 'refreshQuota', 'setAutoUpdateCheck', 'setNetworkAllowed', 'setSettings', 'stop', 'teamSay', 'teamStop', 'updateCheck', 'updateDownload', 'updateRestart']);
     // 接入 AI：后台只认四个名字，别的一律拒绝，不碰任何文件。
     for (const bad of ['../../etc', 'CLAUDE', '']) assert.match(await page.evaluate(async ai => { try { await window.xa.connect(ai as never); return 'ok'; } catch (e) { return String(e); } }, bad), /只收一个 AI 名字/);
     assert.match(await page.evaluate(async () => { try { await window.xa.disconnect('x' as never); return 'ok'; } catch (e) { return String(e); } }), /只收一个 AI 名字/);

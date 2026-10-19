@@ -93,6 +93,10 @@ export const QUOTA_STALE_SECONDS = 30 * 60;
 const teamJobIds = (view: View) => new Set((view.teams ?? []).flatMap(t => [t.writer, t.reviewer]).filter((id): id is string => !!id));
 const chatJobIds = (view: View) => new Set((view.chats ?? []).flatMap(c => c.members.flatMap(m => m.job ? [m.job] : [])));
 export function derive(view: View, now = Date.now()) {
+  const original = view;
+  const managed = new Set((view.autopilots ?? []).filter(r => r.managed).map(r => r.id));
+  // 共用副本节点在自治卡里统一呈现，不冒充需要主人逐件采用的普通任务；历史仍保留原任务。
+  view = { ...view, jobs: view.jobs.filter(j => !j.autopilot || !managed.has(j.autopilot.run)) };
   const members = teamJobIds(view), inChat = chatJobIds(view);
   // 排队：群成员不看活的状态（那只是续接时的一瞬），看群的队列，写在群的卡上。
   const queued = view.jobs.filter(j => j.state === 'queued' && !members.has(j.id) && !inChat.has(j.id)),
@@ -123,7 +127,7 @@ export function derive(view: View, now = Date.now()) {
     runningGroups,
     attention,
     done: done.filter(e => e.at >= now - 86400e3).sort((a, b) => b.at - a.at),
-    history: groups.filter(e => !e.members.some(isOpen) && !chatBusy(e)).sort((a, b) => Date.parse(b.started) - Date.parse(a.started))
+    history: ownerAttention(original).groups.filter(e => !e.members.some(isOpen) && !chatBusy(e)).sort((a, b) => Date.parse(b.started) - Date.parse(a.started))
   };
 }
 // 一列的自定义颜色：核心的看板数据按列名放（进行中、验收中、已完成）。

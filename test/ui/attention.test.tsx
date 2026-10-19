@@ -102,7 +102,7 @@ test('没有文件变化也定期重读；失败后恢复，关闭时清理计�
       () => Object.assign(new EventEmitter(), { close: closed }) as unknown as FSWatcher);
     await vi.advanceTimersByTimeAsync(5000); expect(error).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(5000); expect(publish).toHaveBeenCalledOnce();
-    close(); expect(closed).toHaveBeenCalledTimes(5); expect(vi.getTimerCount()).toBe(0);
+    close(); expect(closed).toHaveBeenCalledTimes(7); expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(5000); expect(read).toHaveBeenCalledTimes(2);
   } finally {
     close?.(); if (previous === undefined) delete process.env.XAGENTS_HOME; else process.env.XAGENTS_HOME = previous;

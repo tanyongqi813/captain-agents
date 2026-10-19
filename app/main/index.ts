@@ -25,6 +25,7 @@ import { jobActions, quotaRefreshHandler, quotaRefresher, settingsActions, teamA
 import { noticeTitle, notificationTracker } from './notifications.ts';
 import type { Notice } from './notifications.ts';
 import { feishuCredentialStore, feishuNotificationScheduler } from './feishu-notifications.ts';
+import { autopilotActions } from './autopilot-bridge.ts';
 import { createTray } from './tray.ts';
 import { readIcon } from './icons.ts';
 import { installIcons } from '../../src/core/icons.ts';
@@ -231,6 +232,9 @@ else {
     }
   });
   void app.whenReady().then(async () => {
+    const autopilots = autopilotActions(async () => publish(await readDesktopView()));
+    ipcMain.handle(channels.autopilotStart, (event, ...args: unknown[]) => { guard(event); return autopilots.start(args); });
+    ipcMain.handle(channels.autopilotStop, (event, ...args: unknown[]) => { guard(event); return autopilots.stop(args); });
     // 命令行启动脚本：没装的自动装上，应用换了位置的跟着改；出错只记日志，不影响启动。
     if (app.isPackaged) await refreshCliLauncher().catch(console.error);
     await loadConfiguredRoster();
