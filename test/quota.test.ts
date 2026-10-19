@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { desktopView, context, fixture, root, until } from './helpers.ts';
 import { boardQuota, checkQuota, ensureQuota, executeQuery, parseCodexQuota, parseCursorQuota, parseGrokQuota, queryCodexQuota, queryQuota, quotaBar, quotaDelta, readQuotaCache } from '../src/core/quota.ts';
+import { classifyKimiProvider, parseKimiUsage } from '../src/core/kimi-quota.ts';
 import { formatQuota } from '../src/cli/quota.ts';
 import type { QueryCommand, QuotaSnapshot, QuotaSnapshots } from '../src/core/quota.ts';
 import { ensureHome, toolRoot } from '../src/core/paths.ts';
@@ -17,7 +18,7 @@ const fixtures = join(root, 'test/fixtures/quota');
 const sample = (name: string) => readFile(join(fixtures, name), 'utf8');
 const at = '2026-09-29T04:00:00.000Z';
 async function snapshot(): Promise<QuotaSnapshot> {
-  return { queriedAt: at, providers: [parseCodexQuota(await sample('codex.jsonl'), at), parseGrokQuota(await sample('grok.json'), at), parseCursorQuota(await sample('cursor.txt'), at)] };
+  return { queriedAt: at, providers: [parseCodexQuota(await sample('codex.jsonl'), at), parseGrokQuota(await sample('grok.json'), at), parseCursorQuota(await sample('cursor.txt'), at), { ...parseKimiUsage(await sample('kimi-usage.txt'), at), source: classifyKimiProvider(await sample('kimi-providers.json'), 'kimi-code/kimi-for-coding') }] };
 }
 async function local(t: Parameters<typeof context>[0]) {
   const c = await context(t, false);
@@ -79,7 +80,7 @@ test('会话按 mtime 看最新 20 份、取最后完整记录，不沿符号链
 
 test('三家互不影响，调用参数、协议、空目录与缓存正确；10 分钟内复用', async t => {
   const c = await local(t), commands: QueryCommand[] = [];
-  const options = { windows: false, sessionsDir: join(c.temp, 'missing'), now: new Date(at), execute: async (cmd: QueryCommand) => {
+  const options = { windows: false, found: async (icon: string) => icon !== 'kimi', sessionsDir: join(c.temp, 'missing'), now: new Date(at), execute: async (cmd: QueryCommand) => {
     commands.push(cmd);
     if (cmd.file === 'grok') {
       assert.equal(cmd.timeoutMs, 20000); assert.deepEqual(cmd.args, ['agent', '--no-leader', 'stdio']);
@@ -114,7 +115,7 @@ test('三家互不影响，调用参数、协议、空目录与缓存正确；10
   await ensureQuota(options); assert.equal(commands.length, 6);
   const malformed = structuredClone(result); malformed.providers[0].bars = [null as any];
   await writeFile(join(c.home, 'cache/quota.json'), JSON.stringify(malformed)); assert.equal(await readQuotaCache(), null);
-  assert.equal(boardQuota(null).length, 3); assert.equal(boardQuota(null)[0].bars[0].used, null);
+  assert.equal(boardQuota(null).length, 4); assert.equal(boardQuota(null)[0].bars[0].used, null);
 });
 
 test('80% 四家分别拦截，未知用量不拦，快照跨重置/近似/缺失时不报差值', async () => {
@@ -191,7 +192,8 @@ test('CLI 替身查询写缓存；派活拦截在建任务前，force 放行，�
   const c = await context(t); await c.add();
   const marker = join(c.temp, 'queries'), extra = { XAGENTS_QUERY_EXEC: join(fixtures, 'query.ts'), XAGENTS_CODEX_SESSIONS: fixtures, XA_QUERY_MARKER: marker };
   const quota = await c.cli(['quota', '--json'], extra); assert.equal(quota.code, 0, quota.stderr);
-  const data: QuotaSnapshot = JSON.parse(quota.stdout); assert.deepEqual(data.providers.filter(p => p.error).map(p => [p.name, p.error]), [], '三家替身查询都应成功；偶发失败时这里会写出是哪家、什么错');
+  const data: QuotaSnapshot = JSON.parse(quota.stdout); assert.deepEqual(data.providers.filter(p => p.error).map(p => [p.name, p.error]), [], '四家替身查询都应成功（含 Kimi 的 provider list + 交互 /usage 两段）；偶发失败时这里会写出是哪家、什么错');
+  assert.equal(data.providers.length, 4);
   assert.match((await c.cli(['quota'], extra)).stdout, /自家模型池/);
   const before = await snapshot(); before.queriedAt = new Date().toISOString(); quotaBar(before, 'codex')!.used = 80;
   await writeFile(join(c.home, 'cache/quota.json'), JSON.stringify(before));
@@ -323,10 +325,11 @@ test('某一家这次查不到：保留那家上一次的数据和时间，写�
   await writeFile(join(dir, 'a.jsonl'), JSON.stringify(reachedLine) + '\n');
   await utimes(join(dir, 'a.jsonl'), new Date(at), new Date(at));
   const good = async (cmd: QueryCommand) => cmd.file === 'grok' ? sample('grok.json') : sample('cursor.txt');
-  const first = await queryQuota({ windows: false, sessionsDir: dir, now: new Date(at), execute: good });
+  const noKimi = { found: async (icon: string) => icon !== 'kimi' };
+  const first = await queryQuota({ windows: false, ...noKimi, sessionsDir: dir, now: new Date(at), execute: good });
   assert.ok(first.providers.every(p => !p.error)); assert.equal(first.providers[0].reached, 'secondary');
   const later = new Date(Date.parse(at) + 3_600_000);
-  const second = await queryQuota({ windows: false, sessionsDir: join(c.temp, 'missing'), now: later, execute: async cmd => { if (cmd.file === 'grok') throw new Error('查询超时'); return sample('cursor.txt'); } });
+  const second = await queryQuota({ windows: false, ...noKimi, sessionsDir: join(c.temp, 'missing'), now: later, execute: async cmd => { if (cmd.file === 'grok') throw new Error('查询超时'); return sample('cursor.txt'); } });
   const [codex, grok, cursor] = second.providers;
   assert.match(codex.error!, /ENOENT|no such/i); assert.equal(codex.at, at); assert.equal(codex.bars[1].used, first.providers[0].bars[1].used); assert.equal(codex.reached, undefined);
   assert.equal(grok.error, '查询超时'); assert.equal(grok.at, at); assert.equal(grok.bars[0].used, first.providers[1].bars[0].used);
@@ -339,9 +342,9 @@ test('某一家这次查不到：保留那家上一次的数据和时间，写�
   assert.doesNotThrow(() => checkQuota(second, [{ who: 'codex' }, { who: 'grok' }]));
   assert.match(formatQuota(second), /Grok：这次没查到（查询超时）；上一次的数据：.*（数据时间 \d\d-\d\d \d\d:\d\d）/);
   // 上次也没有数据：照旧写查不到，不编数字。
-  const third = await queryQuota({ windows: false, sessionsDir: join(c.temp, 'missing'), now: later, execute: async () => { throw new Error('坏了'); } });
+  const third = await queryQuota({ windows: false, ...noKimi, sessionsDir: join(c.temp, 'missing'), now: later, execute: async () => { throw new Error('坏了'); } });
   await writeFile(join(c.home, 'cache/quota.json'), '{broken');
-  const fresh = await queryQuota({ windows: false, sessionsDir: join(c.temp, 'missing'), now: later, execute: async () => { throw new Error('坏了'); } });
+  const fresh = await queryQuota({ windows: false, ...noKimi, sessionsDir: join(c.temp, 'missing'), now: later, execute: async () => { throw new Error('坏了'); } });
   assert.ok(fresh.providers.every(p => p.error && p.at === null && p.bars.every(b => b.used === null)));
   assert.equal(third.providers[2].error, '坏了'); assert.equal(third.providers[2].bars[0].used, cursor.bars[0].used); // 连续失败仍保留最早那次的数据
   assert.match(formatQuota(fresh), /Codex：查不到/);

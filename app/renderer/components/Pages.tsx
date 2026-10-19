@@ -5,7 +5,7 @@ import type { Profile } from '../../../src/core/profiles.ts';
 import type { Entry } from '../lib/board.ts';
 import { averageTimingLine, awaitingReply, decisionText, fmtDur, fmtTime, QUOTA_STALE_SECONDS, realState } from '../lib/board.ts';
 import { dayGroups, dimmed, entryProject, outcomeOf, projectLabel, projectRows, recentLabel } from '../lib/history.ts';
-import { dataTime, quotaLevel } from '../lib/quota.ts';
+import { dataTime, extraUsageLine, extraUsageWarning, quotaLevel } from '../lib/quota.ts';
 import { errorReason } from '../lib/errors.ts';
 import { subscribeTick } from '../lib/ticker.ts';
 import { Button, CheckChip, Chip, EmptyState, ReplyDot, SideNavLayout, WorkerIcon, WorkerIdentity, WorkerRow } from '../ui/index.ts';
@@ -120,7 +120,7 @@ function QuotaCards({ view }: { view: View }) {
       const old = q.at != null && (now - Date.parse(q.at)) / 1000 > QUOTA_STALE_SECONDS;
       return <div className="panel qcard" key={q.name}><div className="crow"><WorkerIcon name={q.icon} /><span className="who">{q.name}</span><span className="faint when">{q.plan}</span></div>{q.bars.map((b, i) => <div key={i}><div className="bar-top"><span>{b.label}</span>{b.used == null ? <span className="faint">查不到</span> : <b>已用 {b.approx ? '不到 ' : ''}{b.used}%</b>}</div><div className="qtrack"><i className={quotaLevel(b.used, view.settings.limits?.quotaStop)} style={{
             width: `${Math.min(100, b.used || 0)}%`
-          }} /></div>{b.reset && <div className="faint card-note">{fmtTime(b.reset, true)} 重置</div>}</div>)}<div className="crow card-note">{old ? <Chip tone="warn">{dataTime(q)}</Chip> : <span className="faint">{dataTime(q)}</span>}{q.failed && <Chip tone="bad" title="显示的是上一次查到的数据">这次没查到</Chip>}</div></div>;
+          }} /></div>{b.reset && <div className="faint card-note">{fmtTime(b.reset, true)} 重置</div>}</div>)}{q.extraUsage && <div className="faint card-note">{extraUsageLine(q.extraUsage)}</div>}{q.extraUsage?.enabled && <div className="muted card-note">{extraUsageWarning}</div>}<div className="crow card-note">{old ? <Chip tone="warn">{dataTime(q)}</Chip> : <span className="faint">{dataTime(q)}</span>}{q.failed && <Chip tone="bad" title="显示的是上一次查到的数据">这次没查到</Chip>}</div></div>;
     })}</div></>;
 }
 type Who = keyof Workers;

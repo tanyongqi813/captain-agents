@@ -137,7 +137,7 @@ test('自定义接口不碰会话记录，丢弃旧数字和触顶标记；缓�
   assert.deepEqual(read?.providers.map(p => p.icon), ['grok', 'cursor']);
   const fresh = await ensureQuota({ windows: false, found: allFound });
   assert.doesNotThrow(() => checkQuota(fresh, [{ who: 'codex' }, { who: 'codex-luna' }, { who: 'deepseek' }], false, 50));
-  assert.deepEqual((await buildView({ windows: false, found: allFound })).quota.map(p => p.icon), ['grok', 'cursor']);
+  assert.deepEqual((await buildView({ windows: false, found: allFound })).quota.map(p => p.icon), ['grok', 'cursor', 'kimi']);
   const dispatched = await c.cli(['run', c.task, '--summary', '自定义接口不按旧额度停派', '--who', 'codex:high']);
   assert.equal(dispatched.code, 0, dispatched.stderr);
   assert.equal((await c.jobs())[0].quota_before?.providers.some(p => p.icon === 'codex'), false);
@@ -147,7 +147,7 @@ test('自定义接口不碰会话记录，丢弃旧数字和触顶标记；缓�
     execute: async () => { throw new Error('离线测试'); },
   });
   assert.equal(sessionReads, 0);
-  assert.deepEqual(snapshot.providers.map(p => p.icon), ['grok', 'cursor']);
+  assert.deepEqual(snapshot.providers.map(p => p.icon), ['grok', 'cursor', 'kimi']);
   assert.equal(snapshot.providers[0].bars[0].used, 12, '其他厂家仍保留上次数据');
   assert.deepEqual(JSON.parse(await readFile(cache, 'utf8')), snapshot);
   assert.doesNotMatch(await readFile(cache, 'utf8'), /codex|Codex|99|week/);

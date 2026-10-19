@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "kimi-code": {
+      "baseUrl": "https://api.kimi.com/coding",
+      "apiKey": "sk-fixture-fake-key-for-offline-tests-only"
+    },
+    "managed:kimi-code": {
+      "baseUrl": "https://api.kimi.com/coding",
+      "oauth": { "accountId": "fixture-user", "scopes": ["coding"] }
+    }
+  },
+  "models": {
+    "k2d8-preview": { "provider": "kimi-code" },
+    "kimi-code/kimi-for-coding": { "provider": "managed:kimi-code" },
+    "kimi-code/kimi-for-coding-highspeed": { "provider": "managed:kimi-code" },
+    "kimi-code/k3": { "provider": "managed:kimi-code" },
+    "kimi-code/k3-256k": { "provider": "managed:kimi-code" }
+  }
+}

@@ -17,7 +17,8 @@ export const PAGE_KEYS: Page[] = pages.map(p => p.id);
 // 顶栏：左边分页切换，右边状态块和设置；件数只在看板列头显示。规范见 docs/ui-spec.md 第 11 节。
 export function TopBar({ view, page, go, openSettings }: { view: View; page: Page; go: (page: Page) => void; openSettings: () => void }) {
   const kimi = view.roster.find(r => r.who === 'kimi');
-  const kimiConnected = kimi && (view.settings.workers.kimi?.enabled ?? true) && !view.unlisted.some(u => u.name === 'Kimi Code');
+  // Kimi 的官方套餐查得到时走额度环（view.quota 里有它）；只有查不到额度时才退化为“已接入”纯图标。
+  const kimiConnected = kimi && !view.quota.some(q => q.icon === 'kimi') && (view.settings.workers.kimi?.enabled ?? true) && !view.unlisted.some(u => u.name === 'Kimi Code');
   return <header className="top">
     {/* 群里有你还没看过的话时，“协作”上一个灰色小点（docs/ui-spec.md 第 17 节）。 */}
     <Segmented label="页面" items={pages.map(p => p.id === 'collab' && page !== 'collab' && view.chats.some(c => c.state === 'open' && unread(c)) ? { ...p, dot: true, dotLabel: '群里有新消息' } : p)} value={page} onChange={id => go(id as Page)} />

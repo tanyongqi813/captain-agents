@@ -22,7 +22,7 @@
 | [TASK-016](tasks/TASK-016.md) | 正常复审沉淀评分与难度证据 | DRAFT | P2 | High | TASK-011、TASK-017 PASSED |
 | [TASK-017](tasks/TASK-017.md) | 完成成本账本与中转站计价依据 | READY | P2 | High | 无 |
 | [TASK-018](tasks/TASK-018.md) | 设置成本资料与额度未知时的预算 | DRAFT | P2 | High | TASK-017 PASSED |
-| [TASK-019](tasks/TASK-019.md) | Kimi 套餐查询与多窗口派发检查 | READY | P2 | High | 无 |
+| [TASK-019](tasks/TASK-019.md) | Kimi 套餐查询与多窗口派发检查 | PASSED | P2 | High | 无 |
 
 ## 当前阶段
 

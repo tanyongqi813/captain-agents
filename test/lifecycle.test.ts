@@ -196,7 +196,7 @@ test('四家同批派发到完成、共同起点、收集、diff、清理与记�
   assert.equal(await c.git(['-C', jobs[0].worktree, 'status', '--porcelain']), beforeStatus);
   assert.equal(await readFile(join(c.home, 'jobs', jobs[0].id, 'diff.patch'), 'utf8'), originalDiff);
   const data = await desktopView(c.home);
-  assert.equal(data.jobs.length, 4); assert.equal(data.quota.length, 3); assert.equal(data.selfcheck.ok, null);
+  assert.equal(data.jobs.length, 4); assert.equal(data.quota.length, 4); assert.equal(data.selfcheck.ok, null);
   await assert.rejects(access(join(c.home, 'board')), { code: 'ENOENT' });
   const result = await c.cli(['collect', first.batch]); assert.equal(result.code, 0, result.stderr);
   const linkDiff = await readFile(join(c.home, 'jobs', jobs[0].id, 'diff.patch'), 'utf8');
