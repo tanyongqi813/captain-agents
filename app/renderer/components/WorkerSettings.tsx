@@ -18,7 +18,7 @@ export const LAST_WORKER = '至少要留一位选手';
 export const LAST_EFFORT = '至少要留一种强度';
 export const FAST_HINT = '同一个模型，跑在更快的机器上，额度按两倍扣';
 const ORDER: Effort[] = ['medium', 'high', 'xhigh'];
-const POOL: Record<string, string> = { 周额度: '本周', 本期额度: '本期', '5 小时额度': '近 5 小时', 自家模型池: '自家池', 其他模型池: '其他池' };
+const POOL: Record<string, string> = { 周额度: '本周', 本期额度: '本期', '5 小时额度': '近 5 小时', 月度额度: '本月', 自家模型池: '自家池', 其他模型池: '其他池' };
 
 // 某位选手现在的设置；核心总会给全，缺了就按“全开”显示（和核心的缺省一致）。
 export function policyOf(entry: Roster, stored: Values['workers'] | undefined): Policy {

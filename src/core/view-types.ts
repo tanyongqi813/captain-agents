@@ -101,7 +101,8 @@ export type View = {
   roster: { who: Who; name: string; model: string; efforts: Effort[]; fastSupported: boolean }[];
   selfcheck: { ok: boolean | null; at: string | null; note: string };
   // at：这家额度的数据时间；failed：这次没查到（bars 里是上一次的数据，at 也是上一次的时间）。
-  quota: { name: string; icon: Provider; plan: string | null; at: string | null; failed?: true; bars: {
+  // extraUsage 只有 Kimi 可能有：加油包（独立付费）元数据，只作文字展示，不画百分比、不进额度环、不影响派发。
+  quota: { name: string; icon: Provider; plan: string | null; at: string | null; failed?: true; extraUsage?: { enabled: boolean | null; spent: number | null; monthlyLimit: number | null; balance: number | null; currency: string | null } | null; bars: {
     label: string; used: number | null; approx?: boolean; reset: string | null;
   }[] }[];
   quotaAt: string | null;

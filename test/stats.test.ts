@@ -32,6 +32,17 @@ test('额度按选手所用池取数；零有效，未知和非法值不补零',
   assert.equal(quotaUsed({ cursor: { auto: 3, api: 30 } }, 'cursor-opus'), 30);
   for (const v of [-1, 101, '10', null, undefined, NaN]) assert.equal(quotaUsed({ grok: { usedPercent: v } }, 'grok'), null);
 });
+test('Kimi 多窗口套餐按 5 小时窗口取数；缺失退回第一个有数据的窗口；未知不补零', () => {
+  const kimi = (bars: unknown) => ({ queriedAt: '2026-10-19T00:00:00Z', providers: [{ icon: 'kimi', bars }] });
+  assert.equal(quotaUsed(kimi([{ label: '5 小时额度', used: 49, windowMinutes: 300 }, { label: '月度额度', used: 2 }]), 'kimi'), 49);
+  // 月度用得多也仍取 5 小时窗口（和 quotaBar 同一口径）。
+  assert.equal(quotaUsed(kimi([{ label: '5 小时额度', used: 20, windowMinutes: 300 }, { label: '月度额度', used: 80 }]), 'kimi'), 20);
+  assert.equal(quotaUsed(kimi([{ label: '月度额度', used: 80 }]), 'kimi'), 80); // 没有 5 小时窗口就退回
+  assert.equal(quotaUsed(kimi([{ label: '5 小时额度', used: null, windowMinutes: 300 }, { label: '月度额度', used: null }]), 'kimi'), null);
+  assert.equal(quotaUsed(kimi([]), 'kimi'), null);
+  assert.equal(quotaUsed({}, 'kimi'), null);
+  assert.equal(quotaUsed({ kimi: { bars: '坏了' } }, 'kimi'), null);
+});
 test('stats 命令从登记处汇总已清理历史任务', async t => {
   const c = await context(t, false); await c.cli(['stats']);
   const dir = join(c.home, 'jobs/history'); await mkdir(dir);

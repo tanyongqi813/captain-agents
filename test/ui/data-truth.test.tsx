@@ -26,6 +26,24 @@ const quotaView = (quotaAt: Date | null = OLD) => {
   return v;
 };
 
+test('Kimi 展示真实窗口，不重复连接占位；加油包单列并提醒可能额外计费，不作为套餐百分比', async () => {
+  const v = quotaView();
+  v.quota.push({ name: 'Kimi Code', icon: 'kimi', plan: null, at: fresh().toISOString(),
+    bars: [bar('5 小时额度', 49), bar('月度额度', 2)],
+    extraUsage: { enabled: true, balance: 100, spent: 3, monthlyLimit: null, currency: '$' } });
+  show(v); await screen.findByRole('tablist', { name: '页面' });
+  const status = screen.getByRole('button', { name: /各家额度/ });
+  expect(status.querySelectorAll('.ring[aria-label^="Kimi Code"]')).toHaveLength(1);
+  expect(within(status).getByRole('img', { name: 'Kimi Code：5 小时额度已用 49%' }).getAttribute('data-used')).toBe('49');
+  expect(status.title).toContain('月度额度：2%'); expect(status.title).toContain('余额 $100');
+  expect(status.title).toContain('套餐用尽后可能继续计费');
+  await toStats();
+  const card = [...document.querySelectorAll('.qcard')].find(c => c.textContent?.includes('Kimi Code'))!;
+  expect(card.querySelectorAll('.qtrack')).toHaveLength(2);
+  expect(card.textContent).toContain('本月已用 $3'); expect(card.textContent).not.toContain('月上限');
+  expect(card.textContent).toContain('工作台不会替你开启或购买');
+});
+
 test('顶栏额度：悬停写各池和数据时间，Cursor 环只取总额度；顶栏只写百分比、不写池名', async () => {
   show(quotaView());
   await screen.findByRole('tablist', { name: '页面' });

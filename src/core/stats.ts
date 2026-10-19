@@ -3,6 +3,8 @@ import { active } from './job.ts';
 import { isolationOf, spec, vendorOf } from './roster.ts';
 import { awakeSeconds, median } from './duration.ts';
 import type { Verification } from './verify.ts';
+import { quotaBar, quotaPoints } from './quota.ts';
+import type { QuotaSnapshot } from './quota.ts';
 
 // verified：有验收记录的件数；passed：其中通过的。没有记录的活不进分母，也不算不合格。
 // averageSeconds：只算做完了（done）的活，扣掉电脑休眠的时间；停下、断了、出错的不算。
@@ -14,9 +16,17 @@ const numeric = (v: unknown): v is number => typeof v === 'number' && Number.isF
 const percent = (v: unknown) => numeric(v) && v >= 0 && v <= 100 ? v : null;
 // 接受服务端原始字段；缺数据不补零。02a 的缓存如另有结构，只需在此适配。
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {};
+function normalized(value: unknown): QuotaSnapshot | null {
+  const providers = object(value).providers;
+  if (!Array.isArray(providers) || providers.some(p => !p || typeof p !== 'object' || !Array.isArray(p.bars)
+    || p.bars.some((b: unknown) => typeof object(b).label !== 'string' || object(b).used !== null && percent(object(b).used) === null))) return null;
+  return value as QuotaSnapshot;
+}
 export function quotaUsed(snapshot: unknown, who: Who): number | null {
   if (vendorOf(who) !== isolationOf(who)) return null; // DeepSeek 不占 Codex 的额度
-  if (isolationOf(who) === 'kimi') return null; // Kimi Code CLI 暂无安全的额度查询接口。
+  const canonical = normalized(snapshot);
+  if (canonical) return quotaBar(canonical, who)?.used ?? null;
+  if (isolationOf(who) === 'kimi') return null;
   const s = object(object(snapshot)[isolationOf(who)]);
   if (isolationOf(who) === 'codex') return percent(object(s.secondary).used_percent ?? object(object(s.rate_limits).secondary).used_percent);
   if (isolationOf(who) === 'grok') return percent(object(s.config).creditUsagePercent ?? s.creditUsagePercent ?? s.usedPercent);
@@ -34,6 +44,14 @@ export function stats(jobs: Job[]): Stat[] {
     const seconds = group.filter(j => j.state === 'done').flatMap(j => awakeSeconds(j) ?? []);
     const deltas = group.flatMap(j => {
       const snapshot = j as Job & { quota_before?: unknown; quota_after?: unknown };
+      const a = normalized(snapshot.quota_before), b = normalized(snapshot.quota_after);
+      if (a || b || isolationOf(j.who) === 'kimi') {
+        if (!a || !b) return [];
+        const source = (s: QuotaSnapshot) => s.providers.find(p => p.icon === isolationOf(j.who))?.source;
+        if (source(a) !== source(b)) return [];
+        const delta = quotaPoints(quotaBar(a, j.who), quotaBar(b, j.who));
+        return delta === null ? [] : [delta];
+      }
       const before = quotaUsed(snapshot.quota_before, j.who), after = quotaUsed(snapshot.quota_after, j.who);
       // 重置或缺快照时，不把负值、未知值混入平均消耗。
       return before !== null && after !== null && after >= before ? [after - before] : [];

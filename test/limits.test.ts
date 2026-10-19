@@ -11,6 +11,7 @@ async function quota(home: string, used: number) {
     { name: 'Codex', icon: 'codex', plan: 'pro', at, bars: [{ label: '周额度', used, reset: null, windowMinutes: 10080 }] },
     { name: 'Grok', icon: 'grok', plan: null, at, bars: [] },
     { name: 'Cursor', icon: 'cursor', plan: null, at, bars: [] },
+    { name: 'Kimi Code', icon: 'kimi', plan: null, at, bars: [{ label: '5 小时额度', used: 10, reset: null, windowMinutes: 300 }] },
   ] };
   await mkdir(join(home, 'cache'), { recursive: true });
   await writeFile(join(home, 'cache/quota.json'), JSON.stringify(snapshot));

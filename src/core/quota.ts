@@ -20,9 +20,14 @@ import { defaultLimits } from './settings.ts';
 import type { QuotaStop } from './settings.ts';
 
 import type { Isolation } from './roster.ts';
+import type { KimiExtraUsage } from './kimi-quota.ts';
+import { KimiCustomProvider, KimiUsageUnavailable, queryKimiQuota, queryKimiSource } from './kimi-quota.ts';
 export type Provider = Isolation;
 export type QuotaBar = { label: string; used: number | null; approx?: boolean; reset: string | null; windowMinutes?: number };
-export type QuotaEntry = { name: string; icon: Provider; plan: string | null; bars: QuotaBar[]; at: string | null; error?: string; reached?: string; onDemand?: string };
+export type QuotaEntry = { name: string; icon: Provider; plan: string | null; bars: QuotaBar[]; at: string | null; error?: string; reached?: string; onDemand?: string;
+  source?: string;
+  // Kimi 加油包：独立付费元数据，只展示不作额度；详见 kimi-quota.ts。
+  extraUsage?: KimiExtraUsage | null };
 export type QuotaSnapshot = { queriedAt: string; providers: QuotaEntry[] };
 export type QuotaSnapshots = { quota_before?: QuotaSnapshot | null; quota_after?: QuotaSnapshot | null };
 export type QueryCommand = {
@@ -194,8 +199,9 @@ export async function queryQuota(options: QuotaOptions = {}): Promise<QuotaSnaps
   const endpoint = options.endpoint ?? await codexEndpoint();
   const previous = await readQuotaCache(endpoint);
   const listed = await listedProviders(options);
-  const providers = await Promise.all(listed.filter(p => p.reason === null && p.icon !== 'kimi' && !(p.icon === 'codex' && endpoint.custom)).map(async ({ icon }) => {
+  const providers = await Promise.all(listed.filter(p => p.reason === null && !(p.icon === 'codex' && endpoint.custom)).map(async ({ icon }) => {
     try {
+      if (icon === 'kimi') return await queryKimiQuota({ execute, at, now: options.now });
       if (icon === 'codex') {
         const directory = options.sessionsDir ?? process.env.XAGENTS_CODEX_SESSIONS;
         if (process.env.XAGENTS_FAKE_WORKER && !directory) throw new Error('测试替身未提供会话记录');
@@ -229,7 +235,15 @@ export async function queryQuota(options: QuotaOptions = {}): Promise<QuotaSnaps
             { afterMs: 40_000, text: '/usage' }, { afterMs: 41_500, text: '\r' }],
           complete: output => cleanTerminal(output).includes('Esc to close') }), at);
       } finally { await rm(root, { recursive: true, force: true }); }
-    } catch (e) { return keepPrevious(icon, (e as Error).message, previous); }
+    } catch (e) {
+      if (icon === 'kimi') {
+        if (e instanceof KimiCustomProvider) return unavailable(icon, '接的是自定义接口，不查官方套餐');
+        if (e instanceof KimiUsageUnavailable && e.source !== previous?.providers.find(p => p.icon === icon)?.source)
+          return { ...unavailable(icon, 'Kimi 账户来源已变化，本次套餐未知'), source: e.source };
+        return keepPrevious(icon, '本次未能查询 Kimi 套餐，请稍后刷新。', previous);
+      }
+      return keepPrevious(icon, (e as Error).message, previous);
+    }
   }));
   const snapshot = { queriedAt: at, providers };
   await writeJson(join(paths().cache, 'quota.json'), snapshot);
@@ -246,6 +260,7 @@ export async function readQuotaCache(endpoint?: Pick<Endpoint, 'custom'>): Promi
     if (endpoint.custom) snapshot.providers = snapshot.providers.filter(p => p.icon !== 'codex');
     if (snapshot.providers.some(p => p.bars.some(b => !b || typeof b.label !== 'string' ||
       (b.used !== null && percent(b.used) === null) || (b.reset !== null && !iso(b.reset))))) return null;
+    if (snapshot.providers.some(p => p.extraUsage != null && (typeof p.extraUsage !== 'object' || Array.isArray(p.extraUsage)))) return null;
     return snapshot;
   } catch { return null; } // 缓存损坏或不可读不能挡住收尾和看板。
 }
@@ -253,8 +268,23 @@ export async function ensureQuota(options: QuotaOptions = {}) {
   const endpoint = options.endpoint ?? await codexEndpoint();
   const cached = await readQuotaCache(endpoint), now = options.now ?? new Date();
   const listed = await listedProviders(options);
-  const icons = listed.filter(p => p.reason === null && p.icon !== 'kimi' && !(p.icon === 'codex' && endpoint.custom)).map(p => p.icon);
+  const icons = listed.filter(p => p.reason === null && !(p.icon === 'codex' && endpoint.custom)).map(p => p.icon);
   if (cached) cached.providers = cached.providers.filter(p => icons.includes(p.icon));
+  if (cached && icons.includes('kimi')) {
+    try {
+      const source = await queryKimiSource(options.execute ?? executeQuery);
+      if (cached.providers.find(p => p.icon === 'kimi')?.source !== source) {
+        let entry: QuotaEntry = { ...unavailable('kimi', 'Kimi 账户来源已变化，本次套餐未知'), source };
+        try { entry = await queryKimiQuota({ execute: options.execute ?? executeQuery, at: now.toISOString(), now }); }
+        catch { /* 已确定来源变化，不沿用旧账户的数字。 */ }
+        cached.providers = cached.providers.filter(p => p.icon !== 'kimi'); cached.providers.push(entry);
+        await writeJson(join(paths().cache, 'quota.json'), cached);
+      }
+    } catch (e) {
+      cached.providers = cached.providers.map(p => p.icon !== 'kimi' ? p : e instanceof KimiCustomProvider
+        ? unavailable('kimi', '接的是自定义接口，不查官方套餐') : { ...p, error: '本次未能确认 Kimi 账户来源，套餐未知' });
+    }
+  }
   const age = cached ? now.getTime() - Date.parse(cached.queriedAt) : Infinity;
   return cached && age >= 0 && age <= 600_000 && icons.every(icon => cached.providers.some(p => p.icon === icon)) ? cached : queryQuota({ ...options, endpoint });
 }
@@ -266,25 +296,36 @@ export function quotaPool(who: Who) {
   return { name: names[provider], label };
 }
 export function quotaBar(snapshot: QuotaSnapshot | null | undefined, who: Who) {
-  if (isolationOf(who) === 'kimi') return undefined;
   if (vendorOf(who) !== isolationOf(who)) return undefined;
   const entry = snapshot?.providers.find(p => p.icon === isolationOf(who));
   if (!entry || entry.error) return undefined;
+  // Kimi 是多窗口套餐：消耗统计固定取 5 小时窗口（没有就取第一个有数据的窗口），派发的多窗口检查在 checkQuota。
+  if (isolationOf(who) === 'kimi')
+    return entry.bars.find(b => b.windowMinutes === 300 && b.used !== null) ?? entry.bars.find(b => b.used !== null);
   const { label } = quotaPool(who);
   return entry.bars.find(b => isolationOf(who) === 'codex' ? b.windowMinutes === 10080 : b.label === label);
 }
 export function checkQuota(snapshot: QuotaSnapshot, chosen: { who: Who }[], force = false, quotaStop: QuotaStop = defaultLimits.quotaStop) {
   if (force) return;
   for (const { who } of chosen) {
-    const bar = quotaBar(snapshot, who);
-    const codex = vendorOf(who) === 'codex' ? snapshot.providers.find(p => p.icon === 'codex') : undefined, reached = !codex?.error && codex?.reached;
-    if (reached || (quotaStop !== null && bar && !bar.approx && bar.used !== null && bar.used >= quotaStop)) {
+    const codex = vendorOf(who) === 'codex' ? snapshot.providers.find(p => p.icon === 'codex') : undefined;
+    const kimi = isolationOf(who) === 'kimi' && vendorOf(who) === isolationOf(who) ? snapshot.providers.find(p => p.icon === 'kimi') : undefined;
+    // Kimi 按账户窗口逐个检查：5 小时、月度等任一到线都拒。其他家保持原有单条口径。
+    const bars = isolationOf(who) === 'kimi' && vendorOf(who) === isolationOf(who)
+      ? !kimi?.error ? kimi?.bars ?? [] : []
+      : [quotaBar(snapshot, who)].filter((bar): bar is QuotaBar => Boolean(bar));
+    const hit = quotaStop === null ? undefined : bars.find(b => !b.approx && b.used !== null && b.used >= quotaStop);
+    const exhausted = !kimi?.error ? kimi?.bars.find(b => !b.approx && b.used !== null && b.used >= 100) : undefined;
+    const reached = !codex?.error && codex?.reached || exhausted;
+    const bar = exhausted ?? hit ?? quotaBar(snapshot, who);
+    if (reached || hit) {
       throw new Error(`${quotaPool(who).name} 的${bar?.label ?? '额度'}${reached ? '已触顶' : `已用 ${bar!.used}%，到了设置里的停派线 ${quotaStop}%`}，本次未派发。确实要派请加 --force。`);
     }
   }
 }
 export function quotaPoints(before: QuotaBar | undefined, after: QuotaBar | undefined): number | null {
   if (!before || !after || before.used === null || after.used === null || before.approx || after.approx || !before.reset || before.reset !== after.reset) return null;
+  if (before.label !== after.label || before.windowMinutes !== after.windowMinutes) return null;
   const diff = Math.round((after.used - before.used) * 10) / 10;
   if (diff < 0) return null;
   return diff;
@@ -295,6 +336,8 @@ export function quotaDelta(job: { who: Who } & QuotaSnapshots): string | null {
   return diff === null ? null : `${after!.label} +${diff.toFixed(1)}%`;
 }
 export function boardQuota(snapshot: QuotaSnapshot | null) {
-  return (snapshot?.providers ?? (['codex', 'grok', 'cursor'] as const).map(icon => unavailable(icon, '尚未查询')))
-    .map(({ name, icon, plan, bars, at, error }) => ({ name, icon, plan, at, ...(snapshot && error ? { failed: true as const } : {}), bars: bars.map(({ label, used, approx, reset }) => ({ label, used, ...(approx ? { approx } : {}), reset })) }));
+  return (snapshot?.providers ?? (['codex', 'grok', 'cursor', 'kimi'] as const).map(icon => unavailable(icon, '尚未查询')))
+    .map(({ name, icon, plan, bars, at, error, extraUsage }) => ({ name, icon, plan, at, ...(snapshot && error ? { failed: true as const } : {}),
+      ...(extraUsage ? { extraUsage } : {}),
+      bars: bars.map(({ label, used, approx, reset }) => ({ label, used, ...(approx ? { approx } : {}), reset })) }));
 }

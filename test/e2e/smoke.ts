@@ -81,6 +81,8 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       { name: 'Codex', icon: 'codex', plan: 'pro', at: now, bars: [{ ...bar('周额度', 31), windowMinutes: 10080 }] },
       { name: 'Grok', icon: 'grok', plan: 'SuperGrok', at: now, bars: [bar('本期额度', 12)] },
       { name: 'Cursor', icon: 'cursor', plan: 'pro', at: now, bars: [bar('总额度', 22), bar('自家模型池', 8), bar('其他模型池', 86)] },
+      { name: 'Kimi Code', icon: 'kimi', plan: null, at: now, bars: [bar('5 小时额度', 49), bar('月度额度', 2)],
+        extraUsage: { enabled: true, balance: 100, spent: 3, monthlyLimit: null, currency: '$' } },
     ] });
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
     delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL;
@@ -252,7 +254,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
     assert.ok(boardText!.includes('负责人在挑'));
     const headerText = await header.textContent();
     for (const word of ['派活工作台', '在跑', '件等你', '等你处理']) assert.ok(!headerText!.includes(word), `顶栏里不该有“${word}”`);
-    assert.deepEqual(await header.locator('.ring').evaluateAll(rings => rings.map(r => [r.getAttribute('data-used'), r.getAttribute('data-level')])), [['31', null], ['12', null], ['22', null]]);
+    assert.deepEqual(await header.locator('.ring').evaluateAll(rings => rings.map(r => [r.getAttribute('data-used'), r.getAttribute('data-level')])), [['31', null], ['12', null], ['22', null], ['49', null]]);
     assert.match(await header.getByRole('button', { name: /各家额度/ }).getAttribute('title') ?? '', /Cursor（pro）\n总额度：22%\n自家模型池：8%\n其他模型池：86%/);
     // 顶栏和红黄绿按钮：顶栏高 48，控件在这一条里垂直居中（按钮位置由主进程按同样的高度摆，见 docs/ui-spec.md 第 11 节）。
     const place = async (selector: string) => header.locator(selector).first().evaluate(el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; });
@@ -463,6 +465,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       assert.equal(await page.locator('.stat-tile').count(), 5);
       assert.ok(await page.locator('.dash-table').count() >= 1);
       await shot(variant.name, 'stats');
+      await page.locator('.quota-cards').screenshot({ animations: 'disabled', path: join(output, `desktop-${variant.name}-kimi-quota.png`) });
       await codexCell.click();
       const reviews = page.getByRole('region', { name: '最近的评语' });
       await reviews.waitFor();
