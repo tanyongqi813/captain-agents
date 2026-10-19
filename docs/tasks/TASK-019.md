@@ -1,6 +1,6 @@
 # TASK-019：Kimi 套餐查询与多窗口派发检查
 
-- 状态：`READY`
+- 状态：`CHANGES_REQUESTED`
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：无；复用现有查询执行器、缓存、额度检查与展示
@@ -66,4 +66,34 @@ npm run build
 
 ## 评审记录
 
-待 Codex 评审。
+### 2026-10-19 Codex 复审：CHANGES_REQUESTED（P2 / High）
+
+**范围**：`.worktrees/task-019`、`feat/task-019-kimi-quota`、基线 `cec2ff8` 的未提交实现。保留执行者探针和实施报告，但本轮未重做真实账号查询或用真实模型验证。主工作区未跟踪的同名 Kimi 文件未被覆盖或纳入提交。
+
+**本轮实跑**：`npm run typecheck` 通过；`test/kimi-quota.test.ts test/quota.test.ts test/guide.test.ts test/stats.test.ts` 共 42/42 通过（本轮未出现报告中的 pty 失败）。独立离线复现 `/private/tmp/task-review-20261019.test.ts` 中 TASK-019 的四条全部失败；需迁入正式测试，而不是继续把执行器整体替身的通过当成边界验证。
+
+**必须修正**
+
+1. **[P1] 不设百分比停派线时放行已耗尽的 Kimi 套餐。** `quota.ts:292` 在 `quotaStop === null` 时完全跳过所有 Kimi 窗口，且 `reached` 只检查 Codex。实际 5 小时窗口 100%、`force=false` 仍能派发；若服务端已开 Extra Usage，可能进入额外消费。按既有语义区分“百分比预警停派”和“服务端额度触顶”，已确认套餐耗尽不能因关闭百分比线或有加油包余额而放行，显式 force 仍沿用既有语义。补 99%/100%、null 阈值、各窗口、force 与加油包组合测试。
+
+2. **[P1] Kimi 检查绕过 error 标志，导致失败缓存/中转切换被旧官方数据拦截。** 新分支直接读取 entry.bars，不像 `quotaBar` 会拒绝 error 数据。复现：保留旧 100% 且 `error='接的是自定义接口，不查官方套餐'`，仍被旧套餐拒绝。暂时网络失败按现有规则保留旧数据与原时间作展示，但不能据此判本次服务端额度；切换自定义接口/账号应失效或隔离旧账户官方数据，不能把旧套餐冒充新付款来源。补旧缓存高/低值、失败、官方切中转及来源变更测试；不得通过 force 规避。
+
+3. **[P2] Extra Usage 正则跨字段借数，未知余额被伪造为月上限。** `parseExtraUsage` 使用 `[^\\d]*` 可越过字段名称：输入 `Enabled Balance unknown Monthly limit $100 Spent $3` 返回 balance=100（应为 null）。月上限未知时同样可能读到后面的消费金额。按明确字段边界和验证过的单位/格式解析，未知/无限/缺失/未启用保持相应语义，不猜测未实测的金额。加缺值、乱序、相邻字段、零、无限和混合单位用例。
+
+4. **[P2] stats 的 Kimi 分支读取了生产者不会生成的数据形状。** 当前读取 `snapshot.kimi.bars`，但 `queryQuota` 和写入 job.quota_before/after 的真实结构是 `{queriedAt, providers:[{icon:'kimi',bars:...}]}`。复现：真实形状的 49% 输入返回 null，新增测试却用手造的根级 kimi 字段掩盖了问题。复用权威快照读取口径并保证前后是同一窗口/单位，窗口缺失或切换不能拼成错误差值。补 queryQuota/派发快照流入 stats 的集成证据，不止手写另一种结构。
+
+**修正边界**：主要是 `src/core/quota.ts`、`src/core/kimi-quota.ts`、`src/core/stats.ts` 及对应测试，必要的来源失效元数据可补类型；不修改 TASK-010 或恢复协议，不新增依赖、网络接口、真实模型调用、付费开关或隔离变更。保留 Cursor 顶栏总额度修正。不提交、不 push、不合并、不自行标 PASSED。
+
+**复验**：
+
+```bash
+npm run typecheck
+node --test --test-timeout=120000 test/kimi-quota.test.ts test/quota.test.ts test/guide.test.ts test/stats.test.ts
+node --test --test-timeout=120000 test/listed.test.ts test/lifecycle.test.ts test/desktop.test.ts test/limits.test.ts test/architecture.test.ts
+npm run test:ui
+npm run build
+```
+
+更新实施报告，说明新增用例、实际结果与差异；UI 既有失败与本题新增失败分开记录，真实探针与替身测试分开，浅/深/窄截图和真实窗口未验收不得写通过。当前重复的“评审记录”标题归为一处，探针记录中 2.1.1/2.2.0 的日期与实测版本需对齐，不能把文档核实当作实际采集。
+
+**优先级复核**：已复核 TASK-019 及 TASK-015/017/018，无调整。TASK-019 保持 P2 / High，改 CHANGES_REQUESTED；本轮与 TASK-010 均未通过，不提交同步，不推进其依赖。两项可在各自副本继续独立修正。
