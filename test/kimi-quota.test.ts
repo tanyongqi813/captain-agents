@@ -235,6 +235,17 @@ test('同账户查询失败只保留展示数据与原时间；账号/中转切�
   assert.ok(custom.providers[0].bars.every(b => b.used === null)); assert.match(custom.providers[0].error!, /自定义接口/);
 });
 
+test('旧缓存缺少Kimi且来源查询失败：只补未知项，不刷新或覆盖 Codex 停派证据', async t => {
+  const c = await local(t); let calls = 0;
+  const codex = { name: 'Codex', icon: 'codex', plan: 'pro', at, bars: [{ label: '周额度', used: 95, reset: null, windowMinutes: 10080 }] };
+  await writeFile(join(c.home, 'cache/quota.json'), JSON.stringify({ queriedAt: at, providers: [codex] }));
+  const result = await ensureQuota({ endpoint: { custom: false }, windows: false, found: async icon => ['codex', 'kimi'].includes(icon), now: new Date(Date.parse(at) + 1000),
+    execute: async cmd => { calls++; assert.equal(cmd.args[0], 'provider'); throw new Error('fixture unavailable'); } });
+  assert.equal(calls, 1); assert.deepEqual(result.providers.find(p => p.icon === 'codex'), codex);
+  assert.ok(result.providers.find(p => p.icon === 'kimi')?.error);
+  assert.throws(() => checkQuota(result, [{ who: 'codex' }]), /95%/);
+});
+
 test('queryQuota 的真实规范快照直接流入 stats；不同窗口、来源、重置及失败数据不算百分点消耗', async t => {
   await local(t);
   const execute = async (cmd: { args: string[] }) => cmd.args[0] === 'provider' ? sample('kimi-providers.json') : sample('kimi-usage.txt');

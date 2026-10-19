@@ -281,8 +281,13 @@ export async function ensureQuota(options: QuotaOptions = {}) {
         await writeJson(join(paths().cache, 'quota.json'), cached);
       }
     } catch (e) {
-      cached.providers = cached.providers.map(p => p.icon !== 'kimi' ? p : e instanceof KimiCustomProvider
-        ? unavailable('kimi', '接的是自定义接口，不查官方套餐') : { ...p, error: '本次未能确认 Kimi 账户来源，套餐未知' });
+      const previous = cached.providers.find(p => p.icon === 'kimi');
+      const entry = e instanceof KimiCustomProvider ? unavailable('kimi', '接的是自定义接口，不查官方套餐')
+        : previous ? { ...previous, error: '本次未能确认 Kimi 账户来源，套餐未知' }
+        : unavailable('kimi', '本次未能确认 Kimi 账户来源，套餐未知');
+      // 首次启用 Kimi 而来源查询失败时也补一条明确未知，避免因为缺这条缓存
+      // 重查所有厂家、把其他家仍有效的停派证据覆盖成查询失败。
+      cached.providers = cached.providers.filter(p => p.icon !== 'kimi'); cached.providers.push(entry);
     }
   }
   const age = cached ? now.getTime() - Date.parse(cached.queriedAt) : Infinity;
