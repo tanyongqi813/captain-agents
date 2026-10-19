@@ -174,7 +174,7 @@ test('递归监视单元测试：合并连续变更，无窗口时不计算，�
       assert.equal(options.recursive, true); events.set(directory, changed);
       return Object.assign(new EventEmitter(), { close() { closed++; } }) as FSWatcher;
     });
-  assert.deepEqual([...events.keys()], ['jobs', 'batches', 'cache', 'teams', 'chats'].map(dir => join(home, dir)));
+  assert.deepEqual([...events.keys()], ['jobs', 'batches', 'cache', 'teams', 'chats', 'autopilots', 'owner-notifications'].map(dir => join(home, dir)));
   t.after(close);
   await writeJson(join(home, 'jobs/one/job.json'), job('one'));
   events.get(join(home, 'jobs'))!();
@@ -197,7 +197,7 @@ test('递归监视单元测试：合并连续变更，无窗口时不计算，�
   events.get(join(home, 'chats'))!();
   await until(async () => published, value => value === 5, 2000);
   close();
-  assert.equal(closed, 5);
+  assert.equal(closed, 7);
   await writeJson(join(home, 'jobs/one/job.json'), job('one'));
   events.get(join(home, 'jobs'))!();
   await sleep(450); assert.equal(published, 5); assert.deepEqual(errors, []);

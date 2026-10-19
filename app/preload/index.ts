@@ -5,6 +5,8 @@ import type { Destination, UpdateState, XaBridge } from '../shared/ipc.ts';
 import type { View } from '../../src/core/view-types.ts';
 
 const bridge: XaBridge = {
+  autopilotStart: (...args: unknown[]) => ipcRenderer.invoke(channels.autopilotStart, ...args),
+  autopilotStop: (...args: unknown[]) => ipcRenderer.invoke(channels.autopilotStop, ...args),
   cliStatus: (...args: unknown[]) => ipcRenderer.invoke(channels.cliStatus, ...args),
   cliInstall: (...args: unknown[]) => ipcRenderer.invoke(channels.cliInstall, ...args),
   isolationFix: (...args: unknown[]) => ipcRenderer.invoke(channels.isolationFix, ...args),

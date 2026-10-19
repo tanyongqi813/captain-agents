@@ -12,6 +12,8 @@ import { readyTask } from './plan-dispatch.ts';
 import { checkSplitGraph, isDiagnosisAction, isOwnerCode, MAX_SPLIT_DEPTH, ownerReasons } from './autopilot-diagnosis.ts';
 import type { DiagnosisAction, OwnerCode, SplitNode } from './autopilot-diagnosis.ts';
 import type { Job } from './job.ts';
+import { stateNames } from './autopilot-state.ts';
+export { stateNames };
 
 // 无人看守（有界自治）的执行登记。设计见 docs/decisions/ADR-001-bounded-autonomy.md 与 docs/tasks/TASK-009.md。
 // 全局状态单独落盘在 ~/.xagents/autopilots/<编号>/run.json，不塞进 Job 或 Batch：
@@ -37,10 +39,6 @@ export const isActiveState = (state: string): state is AutopilotState => ACTIVE_
 export const isEndedState = (state: string): state is AutopilotState => ENDED_STATES.includes(state as AutopilotState);
 
 // 状态的中文说法只在核心写一份，命令行和错误提示都用它。
-export const stateNames: Record<AutopilotState, string> = {
-  planning: '准备中', executing: '在干', reviewing: '等审查', verifying: '等验收',
-  diagnosing: '在诊断', recovering: '等恢复', completed: '已完成', needs_owner: '等主人', stopped: '已停止',
-};
 
 // 预算项名称只在这里定义一次，登记、推进器、命令行都用它，免得各说各话。
 export type BudgetLimit = 'minutes' | 'attempts' | 'nodes' | 'usage';
@@ -155,6 +153,7 @@ export type AutopilotStartOptions = {
   policy?: string;
   ro?: boolean;
   reviewer?: string;
+  expectedNetwork?: boolean;
 };
 
 const RUN_MAX_BYTES = 2 * 1024 * 1024;
@@ -523,6 +522,7 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
     throw error;
   });
   const settings = await readSettings();
+  if (options.expectedNetwork !== undefined && (typeof options.expectedNetwork !== 'boolean' || options.expectedNetwork !== settings.networkAllowed)) throw new Error('联网设置已经变化，请重新确认后启动。');
   if (settings.archivedProjects.includes(project.name)) throw new Error('这个项目已归档，请先取消归档再启动无人看守。');
   // 选手范围必须在 roster 与主人策略之内（收窄可以，放宽不行）；真正的派活还会再校验一次。
   const choices = options.who.map(item => selection(item));

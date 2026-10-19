@@ -16,6 +16,7 @@ import { UpdateDialog } from './components/Update.tsx';
 import { Detail } from './components/Detail.tsx';
 import { History, Stats } from './components/Pages.tsx';
 import { ProjectPlan } from './components/ProjectPlan.tsx';
+import { AutopilotCard } from './components/Autopilot.tsx';
 import { TopBar } from './components/TopBar.tsx';
 export function App() {
   const [view, setView] = useState<View | null>(null),
@@ -24,6 +25,7 @@ export function App() {
     [target, setTarget] = useState<Target | null>(null),
     [chatId, setChatId] = useState(readSelectedChat),
     [historyProject, setHistoryProject] = useState(readHistoryProject),
+    [autopilotFocus, setAutopilotFocus] = useState(''),
     [settings, setSettings] = useState(false),
     [now, setNow] = useState(Date.now),
     [notice, setNotice] = useState(''),
@@ -163,16 +165,18 @@ export function App() {
     tag = (job: { project: string }) => several ? projectLabel(view, projectOf(job)) : undefined;
   const entryHue = (e: Entry) => hue(e.target.kind === 'job' ? e.members[0].batch : e.target.id);
   const shown = target ? normalizeTarget(view, target) : null;
+  const automatic = (view.autopilots ?? []).filter(r => r.managed), autoRunning = automatic.filter(r => r.active), autoOwner = automatic.filter(r => r.state === 'needs_owner');
+  const showAutopilot = (id: string) => { setAutopilotFocus(id); go('plan'); };
   return <><div className="app" inert={target || settings ? true : undefined}><TopBar view={view} page={position.page} go={go} openSettings={() => { setTarget(null); setSettings(true); }} />{error && <div role="alert">读取登记处失败，显示上次读取的内容。</div>}<main className="main">{notice && <p role="alert" className="notice notice-bad">{notice}</p>}
     {position.page === 'board' ? <div id="v-board">
-      <BoardColumn name="running" title="进行中" count={columns.running.length} queued={columns.queued.length + columns.chatQueued} color={columnColor(view, 'running')}>{columns.queued.map(j => <QueuedCard key={j.id} job={j} workers={view.workers} hue={jobHue(j.batch)} project={tag(j)} open={open} />)}{columns.runningGroups.length ? columns.runningGroups.map(e => e.chat && !e.members.length
+      <BoardColumn name="running" title="进行中" count={columns.running.length + autoRunning.length} queued={columns.queued.length + columns.chatQueued} color={columnColor(view, 'running')}>{autoRunning.map(run => <AutopilotCard key={run.id} run={run} open={showAutopilot} />)}{columns.queued.map(j => <QueuedCard key={j.id} job={j} workers={view.workers} hue={jobHue(j.batch)} project={tag(j)} open={open} />)}{columns.runningGroups.length ? columns.runningGroups.map(e => e.chat && !e.members.length
         ? <ChatWaitingCard key={e.target.kind + e.target.id} {...chatCard(e)!} project={several ? projectLabel(view, entryProject(e)) : undefined} open={open} />
         : e.members.length > 1
         ? <BatchGroup key={e.target.kind + e.target.id} hue={hue(e.target.id)} head={<button className="bhead" onClick={() => open(e.target)}><span className="t">{e.title}</span><ProjectTag name={tag(e.members[0])} /><span className="faint">{e.members.length} 家同时在做</span></button>}>{e.members.map(j => <RunningCard key={j.id} job={j} workers={view.workers} typical={typical(j)} group open={open} />)}</BatchGroup>
-        : <RunningCard key={e.target.kind + e.target.id} job={e.members[0]} workers={view.workers} typical={typical(e.members[0])} hue={jobHue(e.members[0].batch)} project={tag(e.members[0])} chat={chatCard(e) || undefined} open={open} />) : columns.queued.length ? null : <EmptyState>现在没有在跑的活</EmptyState>}</BoardColumn>
-      <BoardColumn name="attention" title="验收中" count={columns.attention.length} color={columnColor(view, 'attention')}>{columns.attention.length ? columns.attention.map(e => <AttentionCard key={e.type + e.target.kind + e.target.id} entry={e} workers={view.workers} hue={entryHue(e)} project={tag(e.members[0])} open={open} />) : <EmptyState>没有在验收的活</EmptyState>}</BoardColumn>
+        : <RunningCard key={e.target.kind + e.target.id} job={e.members[0]} workers={view.workers} typical={typical(e.members[0])} hue={jobHue(e.members[0].batch)} project={tag(e.members[0])} chat={chatCard(e) || undefined} open={open} />) : columns.queued.length || autoRunning.length ? null : <EmptyState>现在没有在跑的活</EmptyState>}</BoardColumn>
+      <BoardColumn name="attention" title="验收中" count={columns.attention.length + autoOwner.length} color={columnColor(view, 'attention')}>{autoOwner.map(run => <AutopilotCard key={run.id} run={run} open={showAutopilot} />)}{columns.attention.length ? columns.attention.map(e => <AttentionCard key={e.type + e.target.kind + e.target.id} entry={e} workers={view.workers} hue={entryHue(e)} project={tag(e.members[0])} open={open} />) : autoOwner.length ? null : <EmptyState>没有在验收的活</EmptyState>}</BoardColumn>
       <BoardColumn name="done" title="已完成" count={done.length} color={columnColor(view, 'done')} history={() => go('history')}>{done.length ? <DoneList entries={done} workers={view.workers} label={name => projectLabel(view, name)} open={open} showProject={name => { chooseProject(name); go('history'); }} onArchive={archiveProject} /> : <EmptyState>最近 24 小时没有完成的活</EmptyState>}</BoardColumn>
-    </div> : position.page === 'plan' ? <ProjectPlan view={view} notify={showToast} /> : position.page === 'collab' ? <Chat view={view} selected={chatId} select={selectChat} open={open} notify={showToast} dismiss={dismissToast} /> : position.page === 'history' ? <History view={view} rows={columns.history} filter={position.filter} setFilter={filter => setPosition(p => ({
+    </div> : position.page === 'plan' ? <ProjectPlan view={view} notify={showToast} focusRun={autopilotFocus} openJob={id => open({ kind: 'job', id })} /> : position.page === 'collab' ? <Chat view={view} selected={chatId} select={selectChat} open={open} notify={showToast} dismiss={dismissToast} /> : position.page === 'history' ? <History view={view} rows={columns.history} filter={position.filter} setFilter={filter => setPosition(p => ({
           ...p,
           filter
         }))} project={historyProject} setProject={chooseProject} now={now} open={open} onUnarchive={unarchiveProject} /> : <Stats view={view} />}

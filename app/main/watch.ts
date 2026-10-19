@@ -4,6 +4,8 @@ import { mkdir } from 'node:fs/promises';
 import { paths } from '../../src/core/paths.ts';
 import { chatsDir } from '../../src/core/chat.ts';
 import { teamsDir } from '../../src/core/team.ts';
+import { autopilotsDir } from '../../src/core/autopilot.ts';
+import { ownerNoticesDir } from '../../src/core/owner-notifications.ts';
 import { buildView } from '../../src/core/view.ts';
 import type { View } from '../../src/core/view-types.ts';
 
@@ -22,7 +24,7 @@ export async function watchRegistry(hasWindow: () => boolean, publish: (view: Vi
     reading = true;
     try {
       const view = await read();
-      open = view.jobs.some(j => j.state === 'running' || j.state === 'queued') || view.teams.some(team => team.state === 'running');
+      open = view.jobs.some(j => j.state === 'running' || j.state === 'queued') || view.teams.some(team => team.state === 'running') || (view.autopilots ?? []).some(r => r.active);
       if (!closed && hasWindow()) publish(view);
     }
     catch (error) { onError(error); }
@@ -36,7 +38,7 @@ export async function watchRegistry(hasWindow: () => boolean, publish: (view: Vi
   try {
     const p = paths();
     // 整份登记处一起看时，teams/ 在根目录下面，递归监视已经覆盖。分目录看时要单独加上，频道有新消息才能刷新。
-    for (const dir of (watchSettings ? [p.home] : [p.jobs, p.batches, p.cache, teamsDir(), chatsDir()])) {
+    for (const dir of (watchSettings ? [p.home] : [p.jobs, p.batches, p.cache, teamsDir(), chatsDir(), autopilotsDir(), ownerNoticesDir()])) {
       await mkdir(dir, { recursive: true });
       const watcher = watchDirectory(dir, { recursive: true }, changed);
       watcher.on('error', onError); watchers.push(watcher);

@@ -90,6 +90,8 @@ button, a, input, textarea, select, summary { -webkit-app-region: no-drag; }
 .day { position: sticky; top: 0; z-index: 1; margin: 0; padding: var(--sp-2) 0; background: var(--bg); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
 .hrow { border-top: 1px solid var(--line); }
 .hrow:first-child { border-top: 0; }
+.autopilot-card { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; padding: var(--sp-3); text-align: left; color: var(--text); margin-bottom: var(--sp-2); overflow-wrap: anywhere; }
+.autopilot-card .crow { flex-wrap: wrap; }
 .hsum { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; width: 100%; padding: var(--sp-3) var(--sp-4); border: 0; background: transparent; text-align: left; }
 .hsum:hover { background: var(--sunk); }
 .hsum .date { color: var(--muted); font-size: var(--fs-sm); }

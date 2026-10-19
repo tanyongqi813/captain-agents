@@ -278,7 +278,7 @@ test('buildView 输出新增数据和设置；旧任务标题兜底、旧决定�
   const view = await buildView(), record = await readJob('one');
   assert.equal(view.jobs[0].summary, c.job.summary); assert.deepEqual(view.jobs[0].decision, record.decision);
   assert.deepEqual(view.jobs[0].redo, record.redo); assert.deepEqual(view.jobs[0].sleeps, [period]);
-  assert.deepEqual(view.settings, { keepAwake: false, notifications: false, storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, workers: effectiveWorkers(undefined) }); assert.deepEqual(view.storage, { slimmedJobs: 0, freedBytes: 0, due: 0 }); assert.equal(view.theme?.columns.running, '#aabbcc');
+  assert.deepEqual(view.settings, { keepAwake: false, notifications: false, storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, workers: effectiveWorkers(undefined), networkAllowed: false }); assert.deepEqual(view.storage, { slimmedJobs: 0, freedBytes: 0, due: 0 }); assert.equal(view.theme?.columns.running, '#aabbcc');
   const { summary: _summary, ...legacy } = c.job;
   await writeFile(join(c.home, 'jobs/one/job.json'), JSON.stringify({ ...legacy, decision: { kind: 'adopt', at: c.job.created } }));
   await writeFile(join(c.home, 'batches/old.json'), JSON.stringify({ id: 'old', title: '旧批次', started: c.job.created, jobs: ['one'] }));

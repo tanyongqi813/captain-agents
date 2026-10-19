@@ -8,6 +8,20 @@ import type { Limits, Storage } from './settings.ts';
 import type { DashboardSlice } from './dashboard.ts';
 import type { ChannelMessage, ReviewItem, TeamPhase, TeamReason, TeamState } from './team.ts';
 import type { TaskPlan } from './task-plan.ts';
+import type { AutopilotState } from './autopilot.ts';
+
+export type ViewAutopilot = {
+  id: string; project: string; taskId: string; state: AutopilotState; active: boolean; managed: boolean;
+  created: string; ended: string | null; reason: string | null; writer: string; reviewer: string | null; network: boolean;
+  budget: { policy: string; minutesLeft: number; attemptsLeft: number; nodesLeft: number };
+  nodes: { id: string; state: string; parent: string | null; deps: string[]; title: string | null }[];
+  attempts: { node: string; attempt: number; at: string; outcome: string | null; jobs: string[]; patch: string | null }[];
+  diagnoses: { node: string; at: string; action: string | null; note: string | null }[];
+  reviews: { node: string; at: string; verdict: string | null; jobs: string[] }[];
+  verification: { ok: boolean; at: string; steps: { ok: boolean; summary: string }[] } | null;
+  patch: string | null;
+  notification: 'pending' | 'retry' | 'delivered' | 'handled' | 'expired' | 'paused' | 'exhausted' | 'unknown' | null;
+};
 
 export type Column = 'running' | 'attention' | 'done';
 // 设置页“项目”里一个已登记项目的当前配置（docs/tasks/TASK-003.md）：编辑弹窗按它预填，界面不自己读登记处。
@@ -19,6 +33,7 @@ export type ViewRating = {
   tags: { tag: string; kind: TagKind }[];
 };
 export type ViewJob = Pick<Job, 'id' | 'batch' | 'project' | 'who' | 'model' | 'effort' | 'fast' | 'kind' | 'title' | 'summary' | 'state' | 'base'> & {
+  autopilot?: { run: string };
   // seconds：已结束的活扣掉电脑休眠后的用时；typical：同一选手、同一类活、做完了的至少 3 件时的通常用时（秒），否则 null。
   started: string; ended: string | null; seconds: number | null; typical: number | null;
   check: { ok: boolean; label: string; note: string } | null;
@@ -92,7 +107,7 @@ export type ViewTeam = {
 };
 export type View = {
   updated: string;
-  settings: { keepAwake: boolean; notifications: boolean; storage: Storage; limits: Limits; workers: WorkersPolicy };
+  settings: { keepAwake: boolean; notifications: boolean; storage: Storage; limits: Limits; workers: WorkersPolicy; networkAllowed?: boolean };
   // 自动清理旧日志的账：清过几件、一共腾出多少字节、现在按设置的天数有几件到期待清（清理关着也照算）。
   storage: { slimmedJobs: number; freedBytes: number; due: number };
   // 表现页的仪表盘：每个时间范围 × （全部项目 + 每个项目）各一份，界面按筛选取用，不自己算。
@@ -117,6 +132,8 @@ export type View = {
   // 每个已登记项目的任务规划（docs/TASK_LIST.md 识别结果，src/core/task-plan.ts），key 是项目名。
   // 没有台账的项目是 { present: false }；某个项目规划损坏只反映在它自己的 diagnostics 里，不拖垮看板。
   plans: Record<string, TaskPlan>;
+  autopilots?: ViewAutopilot[];
+  autopilotProblem?: string | null;
   jobs: ViewJob[];
   batches: Batch[];
   teams: ViewTeam[];

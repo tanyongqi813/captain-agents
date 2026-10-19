@@ -7,7 +7,7 @@ import type { ConnectStatus } from '../../src/core/intro.ts';
 // 缺省选手设置，直接用核心算出来的，不另写一份。
 const workerPolicies = effectiveWorkers(undefined);
 export const fixtureView = (): View => ({
-  settings: { keepAwake: true, notifications: true, storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, workers: structuredClone(workerPolicies) },
+  settings: { keepAwake: true, notifications: true, storage: { slim: true, days: 14 }, limits: { maxRunning: 12, quotaStop: 80 }, workers: structuredClone(workerPolicies), networkAllowed: false },
   storage: { slimmedJobs: 0, freedBytes: 0, due: 0 },
   dashboard: [],
   unlisted: [],
@@ -144,5 +144,7 @@ export const fixtureBridge = (extra: Partial<XaBridge> = {}): XaBridge => ({
   projectCheck: vi.fn(async () => { throw new Error('测试没有准备项目体检'); }), projectChooseRules: vi.fn(async () => null),
   planDispatch: vi.fn(async () => { throw new Error('测试没有准备规划派发'); }),
   planOpenSpec: vi.fn(async () => { throw new Error('测试没有准备打开 Task Spec'); }),
+  autopilotStart: vi.fn(async () => { throw new Error('测试没有准备无人看守启动'); }),
+  autopilotStop: vi.fn(async () => {}),
   ...extra,
 });

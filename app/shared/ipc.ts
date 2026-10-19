@@ -16,6 +16,7 @@ export const channels = {
   projectChooseRules: 'xa:project-choose-rules', projectOpen: 'xa:project-open',
   projectUpdate: 'xa:project-update', projectRemove: 'xa:project-remove', projectCheck: 'xa:project-check',
   planDispatch: 'xa:plan-dispatch', planSpec: 'xa:plan-spec',
+  autopilotStart: 'xa:autopilot-start', autopilotStop: 'xa:autopilot-stop',
   decide: 'xa:decide', redo: 'xa:redo', stop: 'xa:stop', comment: 'xa:comment',
   teamSay: 'xa:team-say', teamStop: 'xa:team-stop',
   chatCreate: 'xa:chat-create', chatSay: 'xa:chat-say', chatStop: 'xa:chat-stop', chatRename: 'xa:chat-rename',
@@ -51,6 +52,8 @@ export type RegisteredProject = { name: string; label: string; repo: string };
 // 规划派发（docs/tasks/TASK-006.md）：窗口只能交项目标识、Task ID、按“选手:强度[:fast]”写好的选择和只读开关。
 // 核心重新读规划文件做权威校验（只有真正可执行的 READY 任务能派发），再交给现有派发流程。
 export type PlanDispatchInput = { project: string; taskId: string; who: string[]; ro?: boolean };
+export type AutopilotInput = { project: string; taskId: string; writer: string; reviewer: string;
+  policy: 'short' | 'standard' | 'long'; permission: 'workspace-write'; network: boolean };
 // 打开 Task Spec（docs/tasks/TASK-006.md）：窗口只交已登记项目名和 TASK-005 解析出来的仓库内相对路径
 // （docs/tasks/TASK-数字.md）；主进程按登记处的仓库重新解析，绝对路径、任意文件一律拒绝。
 export type PlanSpecInput = { project: string; spec: string };
@@ -140,4 +143,6 @@ export type XaBridge = {
   // 打开 Task Spec（docs/tasks/TASK-006.md）：只交项目名和仓库内相对路径，主进程解析出真实文件再打开；
   // 路径不合法或仓库里没有就报中文原因。窗口没有打开任意文件的入口。
   planOpenSpec(input: PlanSpecInput): Promise<void>;
+  autopilotStart(input: AutopilotInput): Promise<string>;
+  autopilotStop(id: string): Promise<void>;
 };

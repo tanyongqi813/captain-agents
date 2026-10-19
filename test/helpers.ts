@@ -39,7 +39,7 @@ export async function context(t: TestContext, repository = true) {
   await mkdir(home); await mkdir(repo);
   await mkdir(join(temp, 'user-home'));
   const env = { ...process.env, XAGENTS_TRASH: join(temp, 'trash'), XAGENTS_HOME: home, CODEX_HOME: join(temp, 'codex-config'), XAGENTS_CAFFEINATE: join(temp, 'no-caffeinate'), XAGENTS_FAKE_WORKER: fixture, XAGENTS_APPLICATIONS: join(temp, 'Applications'), XAGENTS_MAX_RUNNING: '6', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: '测试', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: '测试', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
-  delete env.XAGENTS_SRT;
+  Reflect.deleteProperty(env, 'XAGENTS_SRT');
   const cli = (args: string[], extra: NodeJS.ProcessEnv = {}, cwd = repo) => exec(process.execPath, [join(root, 'src/cli/cli.ts'), ...args], cwd, { ...env, ...(['guide', 'connect'].includes(args[0]) ? { HOME: join(temp, 'user-home') } : {}), ...extra });
   const git = async (args: string[]) => {
     const r = await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], repo, env);

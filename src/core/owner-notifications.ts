@@ -205,3 +205,5 @@ export async function retryPausedOwnerNotices(): Promise<void> {
   });
 }
 export const readOwnerNotices = () => withLock(ownerNoticesDir(), readNotices);
+// 只读 View 不建目录、不申请会落盘的锁；逐事件文件均由 atomic rename 替换。
+export const readOwnerNoticesReadonly = readNotices;
