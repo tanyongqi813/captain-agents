@@ -17,7 +17,11 @@ const chatRound = chatJob?.resume?.round ?? 1;
 const chatModes = JSON.parse(process.env.XA_TEST_CHAT_MODES || '{}') as Record<string, string>;
 const chatReports = JSON.parse(process.env.XA_TEST_CHAT_REPORTS || '{}') as Record<string, string | string[]>;
 const chatReport = chatJob ? chatReports[chatJob.who] : undefined;
-const mode = (chatJob && chatModes[chatJob.who]) || process.env.XA_TEST_MODE || 'ok';
+// 无人看守的诊断派发（TASK-010 的生产适配层测试）：只有设了 XA_TEST_AUTOPILOT 才生效，而且只认带诊断包标记的题目
+// （那段标记只有平台的诊断派发会产生）。平时一条分支都走不到，群聊和小队的替身行为一个字都不变。
+const autopilot = process.env.XA_TEST_AUTOPILOT ? JSON.parse(process.env.XA_TEST_AUTOPILOT) as { diagnosis?: string } : undefined;
+const diagnosing = autopilot !== undefined && prompt.includes('<<<XAGENTS-DIAGNOSIS>>>');
+const mode = diagnosing ? 'ok' : (chatJob && chatModes[chatJob.who]) || process.env.XA_TEST_MODE || 'ok';
 writeFileSync(join(dir, 'observed.json'), JSON.stringify({ args, prompt, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('GROK_'))), keys: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'DEEPSEEK_API_KEY'].filter(k => k in process.env), secrets: Object.keys(process.env).filter(k => /KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH|COOKIE|PRIVATE/i.test(k)), plain: process.env.XA_TEST_PLAIN ?? null, codexHome: process.env.CODEX_HOME ?? null, cursorAuth: process.env.CURSOR_AUTH_TOKEN ?? null, credentialStore: process.env.AGENT_CLI_CREDENTIAL_STORE ?? null, cwd: process.cwd() }));
 // 续接时把原会话号再打出来，方便平台从本轮日志里对上号。Codex 在 exec resume 的倒数第二个参数，Grok 在 --resume 后面。
 const resumedSession = () => {
@@ -96,7 +100,7 @@ if (mode === 'hang' || mode === 'ignore-term') {
     writeFileSync(ticks, String(n));
     writeFileSync(join(process.cwd(), 'writer-round.txt'), `第${n}轮\n`);
   }
-  const report = chatReport !== undefined ? (Array.isArray(chatReport) ? chatReport[Math.min(chatRound - 1, chatReport.length - 1)] : chatReport) : mode === 'real' ? '## 结论\n测试替身完成。\n## 真实环境检查步骤\n- 打开页面，看到任务列表\n* 切换深色，文字清楚\n1. 点击详情，显示说明\n## 其他\n- 不应收取\n' : mode === 'empty' ? '' : role === 'reviewer' ? reviewReport() : role === 'writer' ? writerReport(prompt) : '## 结论\n测试替身完成。\n<script>throw new Error("不能执行")</script>\n';
+  const report = diagnosing ? autopilot!.diagnosis ?? '' : chatReport !== undefined ? (Array.isArray(chatReport) ? chatReport[Math.min(chatRound - 1, chatReport.length - 1)] : chatReport) : mode === 'real' ? '## 结论\n测试替身完成。\n## 真实环境检查步骤\n- 打开页面，看到任务列表\n* 切换深色，文字清楚\n1. 点击详情，显示说明\n## 其他\n- 不应收取\n' : mode === 'empty' ? '' : role === 'reviewer' ? reviewReport() : role === 'writer' ? writerReport(prompt) : '## 结论\n测试替身完成。\n<script>throw new Error("不能执行")</script>\n';
   const session = resumedSession() || randomUUID();
   if (mode === 'malformed') process.stdout.write('{bad');
   else if (codex) {

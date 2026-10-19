@@ -9,6 +9,8 @@ import { readSettings } from './settings.ts';
 import { checkChoice } from './policy.ts';
 import { selection } from './workers.ts';
 import { readyTask } from './plan-dispatch.ts';
+import { checkSplitGraph, isDiagnosisAction, isOwnerCode, MAX_SPLIT_DEPTH, ownerReasons } from './autopilot-diagnosis.ts';
+import type { DiagnosisAction, OwnerCode, SplitNode } from './autopilot-diagnosis.ts';
 
 // 无人看守（有界自治）的执行登记。设计见 docs/decisions/ADR-001-bounded-autonomy.md 与 docs/tasks/TASK-009.md。
 // 全局状态单独落盘在 ~/.xagents/autopilots/<编号>/run.json，不塞进 Job 或 Batch：
@@ -58,13 +60,43 @@ export const PRESETS: Record<AutopilotPolicyId, AutopilotPolicy> = {
 export const MAX_DEPTH = 2;
 export const MAX_CONTINUES_PER_NODE = 1;
 export const MAX_RETRIES_PER_NODE = 1;
+// 同一个节点最多请几次诊断：留一点余量（失败 → 诊断 → 补做 → 又失败），但绝不让 AI 无限来回。
+export const MAX_DIAGNOSES_PER_NODE = 3;
 
 // 待确认的外部动作：先落这个再动手。jobs 只在外部动作真的启动后才写；
 // 崩溃恢复时"有令牌没 jobs"要靠外部证据（任务记录里的同一个令牌）判断有没有启动过。
-export type AutopilotAction = { token: string; node: string; attempt: number; at: string; jobs?: string[] };
+// phase：这个动作是写手在干（execute）还是请负责人 AI 诊断（diagnose）；旧登记没有这一字段，按 execute 读。
+// mode：诊断决定"补做"时是 continue（叫醒上一轮那件活，保住副本里的改动），其余是 execute（从起点新派）。
+export type AutopilotAction = {
+  token: string; node: string; attempt: number; at: string; jobs?: string[];
+  phase?: 'execute' | 'diagnose'; mode?: 'execute' | 'continue' | 'retry'; prompt?: string;
+  retrySource?: string[];
+  // 补做要叫醒哪几件活、各叫到第几轮（mode=continue 才有）。先落盘再动手：崩溃后靠它分清"只预留"和"真的叫醒了"，
+  // 不会把旧一轮的结果认成新一轮（docs/tasks/TASK-010.md 评审第 5 条）。
+  resume?: { job: string; round: number }[];
+};
 export type AutopilotOutcome = 'done' | 'failed' | 'blocked';
-export type AutopilotAttempt = { node: string; attempt: number; token: string; at: string; jobs?: string[]; outcome?: AutopilotOutcome; note?: string };
+export type AutopilotAttempt = {
+  node: string; attempt: number; token: string; at: string; jobs?: string[];
+  outcome?: AutopilotOutcome; note?: string;
+  // 这一次尝试花掉的用量（只记这一次实际用掉的，旧登记没有这一字段，按 0 算）。
+  // job.usage 是"当前这一轮"的用量（续轮开始时清空，归过档的取轮记录），所以这里不再相减。
+  usage?: { read: number; cached: number; out: number };
+};
 export type AutopilotNode = { id: string; depth: number; state: 'pending' | 'running' | 'passed' | 'failed'; attempts: number; continues: number; retries: number };
+
+// 一次诊断（docs/tasks/TASK-010.md）：证据指纹、请的是哪一件负责人任务、最后决定和原因码。
+// 指纹 + 动作相同就是循环；code 是给主人看的结构化原因（TASK-013 拿它发通知，不再调 AI 编文字）。
+export type AutopilotDiagnosis = {
+  node: string; attempt: number; at: string; token: string; fingerprint: string;
+  // 这一次证据里"没被接受的改动"文件数：决定 retry 能不能走（有改动不许从头重做）。
+  changes?: number;
+  action?: DiagnosisAction; code?: OwnerCode; note?: string; jobs?: string[];
+  // 这次诊断本身花掉的用量（也占整台执行的预算）。
+  usage?: { read: number; cached: number; out: number };
+};
+// 诊断给出的候选子任务图（TASK-010 只存，不执行；执行见 TASK-011）。
+export type AutopilotSplit = { at: string; source: string; nodes: SplitNode[] };
 
 export type AutopilotRun = {
   id: string;
@@ -80,6 +112,11 @@ export type AutopilotRun = {
   state: AutopilotState;
   reason?: string;            // 停下时给主人看的中文原因
   limit?: BudgetLimit;        // 转 needs_owner 时，是哪一项预算先到
+  // 转 needs_owner 的结构化原因码和不超过 300 字的补充说明（旧登记没有，读作空）。
+  ownerCode?: OwnerCode; ownerNote?: string;
+  // 需要主人时那一条通知事件的稳定编号：和转 needs_owner 在同一次受锁改写里写下，一台执行只有一条。
+  // 正文由原因码生成（TASK-013），这里只留编号，用来做到"同一件事不重复通知"。
+  ownerEvent?: string;
   created: string; updated: string; ended?: string;
   // 预算核算：运行时长按秒累计（推进器每轮扣掉电脑休眠），尝试与节点按次数，用量按任务记录里已知的数字。
   elapsedSeconds: number;
@@ -91,6 +128,11 @@ export type AutopilotRun = {
   action?: AutopilotAction;
   nodes: AutopilotNode[];
   attempts: AutopilotAttempt[];
+  // 诊断历史与细拆候选（TASK-010 新增；旧登记没有这两个字段，读作空）。
+  diagnoses?: AutopilotDiagnosis[];
+  split?: AutopilotSplit;
+  // 诊断决定"补做/重试"后，下一次写手尝试要带上的补充题目；动作一开就搬到 action 里，写手用不着再读诊断。
+  nextPrompt?: { node: string; mode: 'continue' | 'retry'; prompt: string };
   // 推进器（隔离外的后台进程）。
   pid?: number; pidSince?: number;
 };
@@ -203,6 +245,21 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
     if (!isCount(pending.attempt) || pending.attempt < 1) throw bad('动作尝试序号无效');
     if (!isWhen(pending.at)) throw bad('动作时间无效');
     if (pending.jobs !== undefined && !isIds(pending.jobs)) throw bad('动作任务号无效');
+    if (pending.phase !== undefined && pending.phase !== 'execute' && pending.phase !== 'diagnose') throw bad('动作类型不认识');
+    if (pending.mode !== undefined && pending.mode !== 'execute' && pending.mode !== 'continue' && pending.mode !== 'retry') throw bad('动作方式不认识');
+    if (pending.retrySource !== undefined && (!isIds(pending.retrySource) || !pending.retrySource.length)) throw bad('重试来源无效');
+    if (pending.mode === 'retry' && pending.retrySource === undefined) throw bad('重试缺少来源');
+    if (pending.prompt !== undefined && !isText(pending.prompt, 1200)) throw bad('动作里的补充题目无效');
+    if (pending.mode === 'continue' && pending.prompt === undefined) throw bad('补做的动作缺少补充题目');
+    if (pending.resume !== undefined) {
+      if (pending.mode !== 'continue') throw bad('只有补做的动作才记续接意图');
+      if (!Array.isArray(pending.resume) || !pending.resume.length || pending.resume.length > 12) throw bad('续接意图无效');
+      for (const item of pending.resume) {
+        const row = item as Record<string, unknown> | null;
+        if (!row || typeof row !== 'object' || Array.isArray(row)) throw bad('续接意图无效');
+        if (!isText(row.job, 200) || !isCount(row.round) || row.round < 2) throw bad('续接意图无效');
+      }
+    }
   }
   // 节点：深度、状态、三个计数都要在范围内。
   const nodes = run.nodes;
@@ -231,6 +288,12 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
     if (attempt.jobs !== undefined && !isIds(attempt.jobs)) throw bad('尝试的任务号无效');
     if (attempt.outcome !== undefined && (typeof attempt.outcome !== 'string' || !['done', 'failed', 'blocked'].includes(attempt.outcome))) throw bad('尝试结局不认识');
     if (attempt.note !== undefined && !isText(attempt.note, 500)) throw bad('尝试备注无效');
+    if (attempt.usage !== undefined) {
+      const spent = attempt.usage;
+      if (!spent || typeof spent !== 'object' || Array.isArray(spent)) throw bad('尝试用量记录无效');
+      const row = spent as Record<string, unknown>;
+      if (!isNumber(row.read) || !isNumber(row.cached) || !isNumber(row.out)) throw bad('尝试用量记录无效');
+    }
   }
   if (attempts.length !== run.attemptCount) throw bad(`尝试次数和记录对不上（${attempts.length} 条记录 / 计数 ${String(run.attemptCount)}）`);
   if (nodes.length !== run.nodeCount) throw bad(`节点数和记录对不上（${nodes.length} 条记录 / 计数 ${String(run.nodeCount)}）`);
@@ -246,6 +309,59 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
   }
   if (run.reason !== undefined && !isText(run.reason, 500)) throw bad('原因文字无效');
   if ((state === 'needs_owner' || state === 'stopped') && run.reason === undefined) throw bad(`${state} 状态缺少原因`);
+  // 结构化原因码与补充说明：只属于 needs_owner；旧登记没有这两个字段，照常读。
+  if (run.ownerCode !== undefined && !isOwnerCode(run.ownerCode)) throw bad('原因码不认识');
+  if (run.ownerCode !== undefined && state !== 'needs_owner') throw bad('原因码只属于 needs_owner');
+  if (run.ownerNote !== undefined) {
+    if (state !== 'needs_owner') throw bad('原因补充只属于 needs_owner');
+    if (!isText(run.ownerNote, 300)) throw bad('原因补充无效');
+  }
+  if (run.ownerEvent !== undefined) {
+    if (state !== 'needs_owner') throw bad('通知事件号只属于 needs_owner');
+    if (!isText(run.ownerEvent, 100)) throw bad('通知事件号无效');
+  }
+  // 诊断历史（TASK-010）：指纹、动作、原因码都在白名单里，长度受控。
+  if (run.diagnoses !== undefined) {
+    if (!Array.isArray(run.diagnoses)) throw bad('诊断记录不是数组');
+    if (run.diagnoses.length > 64) throw bad('诊断记录条数超过上限');
+    for (const item of run.diagnoses) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw bad('诊断记录不是对象');
+      const row = item as Record<string, unknown>;
+      if (!isText(row.node, 200)) throw bad('诊断的节点编号无效');
+      if (!isCount(row.attempt) || row.attempt < 1) throw bad('诊断的尝试序号无效');
+      if (!isWhen(row.at)) throw bad('诊断时间无效');
+      if (!isText(row.token, 200)) throw bad('诊断令牌无效');
+      if (typeof row.fingerprint !== 'string' || !/^[0-9a-f]{16}$/.test(row.fingerprint)) throw bad('诊断指纹无效');
+      if (row.changes !== undefined && !isCount(row.changes)) throw bad('诊断里的改动数无效');
+      if (row.action !== undefined && !isDiagnosisAction(row.action)) throw bad('诊断动作不认识');
+      if (row.code !== undefined && !isOwnerCode(row.code)) throw bad('诊断原因码不认识');
+      if (row.note !== undefined && !isText(row.note, 600)) throw bad('诊断说明无效');
+      if (row.jobs !== undefined && !isIds(row.jobs)) throw bad('诊断任务号无效');
+      if (row.usage !== undefined) {
+        const spent = row.usage as Record<string, unknown> | null;
+        if (!spent || typeof spent !== 'object' || Array.isArray(spent)) throw bad('诊断用量记录无效');
+        if (!isNumber(spent.read) || !isNumber(spent.cached) || !isNumber(spent.out)) throw bad('诊断用量记录无效');
+      }
+    }
+  }
+  // 细拆候选图：只认五个字段、不循环、深度受控（同一个校验器，不在别处另写一份）。
+  if (run.split !== undefined) {
+    const split = run.split;
+    if (!split || typeof split !== 'object' || Array.isArray(split)) throw bad('细拆记录无效');
+    const row = split as Record<string, unknown>;
+    if (!isWhen(row.at)) throw bad('细拆时间无效');
+    if (row.source !== undefined && !isText(row.source, 200)) throw bad('细拆来源无效');
+    try { checkSplitGraph(row.nodes); } catch (error) { throw bad(`细拆候选图${(error as Error).message}`); }
+  }
+  // 待用的补充题目：还在走的时候才能挂着。
+  if (run.nextPrompt !== undefined) {
+    const row = run.nextPrompt as Record<string, unknown> | null;
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw bad('待用的补充题目无效');
+    if (!isText(row.node, 200)) throw bad('待用的节点编号无效');
+    if (row.mode !== 'continue' && row.mode !== 'retry') throw bad('待用的补充题目方式不认识');
+    if (!isText(row.prompt, 1200)) throw bad('待用的补充题目无效');
+    if (isEndedState(state)) throw bad('已经结束的登记还挂着待用的补充题目');
+  }
   return run as AutopilotRun;
 }
 
@@ -384,9 +500,14 @@ async function projectBase(repo: string): Promise<string> {
 }
 
 // 预算核算：时长按累计秒数（已扣休眠），尝试、节点按次数，用量按任务记录里已知的数字。
+// 外部 AI 尝试的总数：写手的每一轮 + 每一次负责人诊断。预设里的"4/10/16 次"是这台执行能调用 AI 的总次数，
+// 诊断同样花额度和时间，所以必须一起算（docs/tasks/TASK-010.md 评审第 2 条）。写手序号仍单独存在 attemptCount 里。
+export function aiAttempts(run: AutopilotRun): number {
+  return run.attemptCount + (run.diagnoses?.length ?? 0);
+}
 export function budgetUsed(run: AutopilotRun): { minutes: number; attempts: number; nodes: number; usage: number } {
   const usage = run.usage ? run.usage.read + run.usage.cached + run.usage.out : 0;
-  return { minutes: run.elapsedSeconds / 60, attempts: run.attemptCount, nodes: run.nodeCount, usage };
+  return { minutes: run.elapsedSeconds / 60, attempts: aiAttempts(run), nodes: run.nodeCount, usage };
 }
 
 // 哪一项预算先到就返回哪一项；都没到返回 null。判定用 >=：到了上限就不许再动外部工作。
@@ -416,11 +537,25 @@ export type AutopilotEvent =
   | { kind: 'verified' }
   | { kind: 'failed'; note?: string }
   | { kind: 'retry' }
+  // 诊断给出的"补做"：diagnosing → executing，节点上的 continues 由调用方加。
+  | { kind: 'continue' }
+  // 诊断给出的"转验收"：diagnosing → verifying。
+  | { kind: 'verify' }
+  // 有界结束：带结构化原因码（TASK-013 拿它发通知）。
+  | { kind: 'owner'; code: OwnerCode; note?: string }
   | { kind: 'budget'; limit: BudgetLimit }
   | { kind: 'blocked'; note: string }
   | { kind: 'lost'; note: string }
-  | { kind: 'resume' }
+  // 恢复过的登记接回：phase=diagnose 时接回"在诊断"，否则接回"在干"。
+  | { kind: 'resume'; phase?: 'execute' | 'diagnose' }
   | { kind: 'stop'; note?: string };
+
+// 转 needs_owner 的中文原因：固定模板 + 可选的一句补充（补充不超过 300 字，总长再卡 500）。
+export function ownerReason(code: OwnerCode, note?: string): string {
+  const text = note ? `${ownerReasons[code]}（${note}）` : ownerReasons[code];
+  const chars = [...text];
+  return chars.length > 500 ? chars.slice(0, 500).join('') : text;
+}
 
 // 状态机骨架：只做转移和记账，不启动任何外部工作。非法转移返回 false，调用方按失败关闭处理。
 export function advance(run: AutopilotRun, event: AutopilotEvent, now = new Date()): boolean {
@@ -428,7 +563,9 @@ export function advance(run: AutopilotRun, event: AutopilotEvent, now = new Date
   const stop = (state: AutopilotState, note: string, limit?: BudgetLimit) => {
     run.state = state; run.reason = note; run.ended = at;
     if (limit) run.limit = limit; else delete run.limit;
-    delete run.action;
+    delete run.action; delete run.ownerCode; delete run.ownerNote; delete run.nextPrompt;
+    // 需要主人时同一次改写里就写下事件编号：结束状态再也推不动，所以一台执行只会有一个。
+    if (state === 'needs_owner') run.ownerEvent = newToken(); else delete run.ownerEvent;
   };
   switch (event.kind) {
     case 'intent':
@@ -449,7 +586,8 @@ export function advance(run: AutopilotRun, event: AutopilotEvent, now = new Date
       return true;
     case 'verified':
       if (run.state !== 'verifying') return false;
-      run.state = 'completed'; run.ended = at; delete run.reason; delete run.limit; delete run.action;
+      run.state = 'completed'; run.ended = at;
+      delete run.reason; delete run.limit; delete run.action; delete run.ownerCode; delete run.ownerNote;
       return true;
     case 'failed':
       if (run.state !== 'executing' && run.state !== 'verifying') return false;
@@ -461,6 +599,22 @@ export function advance(run: AutopilotRun, event: AutopilotEvent, now = new Date
       if (exceededBudget(run)) return false;
       run.state = 'executing'; delete run.reason;
       return true;
+    case 'continue':
+      if (run.state !== 'diagnosing') return false;
+      if (exceededBudget(run)) return false;
+      run.state = 'executing'; delete run.reason;
+      return true;
+    case 'verify':
+      if (run.state !== 'diagnosing') return false;
+      run.state = 'verifying'; delete run.reason;
+      return true;
+    case 'owner': {
+      if (isEndedState(run.state)) return false;
+      stop('needs_owner', ownerReason(event.code, event.note));
+      run.ownerCode = event.code;
+      if (event.note) run.ownerNote = event.note;
+      return true;
+    }
     case 'budget':
       if (isEndedState(run.state)) return false;
       stop('needs_owner', `${budgetNames[event.limit]}预算用完了（${run.policy.id} 预设：${run.policy.minutes} 分钟 / ${run.policy.attempts} 次尝试 / ${run.policy.nodes} 个节点），平台不再自动动手，请主人接手。`, event.limit);
@@ -476,7 +630,7 @@ export function advance(run: AutopilotRun, event: AutopilotEvent, now = new Date
       return true;
     case 'resume':
       if (run.state !== 'recovering') return false;
-      run.state = 'executing'; delete run.reason;
+      run.state = event.phase === 'diagnose' ? 'diagnosing' : 'executing'; delete run.reason;
       return true;
     case 'stop':
       if (isEndedState(run.state)) return false;
@@ -496,4 +650,21 @@ export function canRetry(run: AutopilotRun, node: string): boolean {
   if (!target) return false;
   if (target.retries >= MAX_RETRIES_PER_NODE) return false;
   return exceededBudget(run) === null;
+}
+
+// 这个节点还能不能补做（continue）：同样先看预算，再看节点上的 continues 次数。
+export function canContinue(run: AutopilotRun, node: string): boolean {
+  const target = run.nodes.find(item => item.id === node);
+  if (!target) return false;
+  if (target.continues >= MAX_CONTINUES_PER_NODE) return false;
+  return exceededBudget(run) === null;
+}
+
+// 旧登记没有 diagnoses 字段：统一从这里读，调用方不用到处写 ?? []。
+export const diagnosesOf = (run: AutopilotRun): AutopilotDiagnosis[] => run.diagnoses ?? [];
+
+// 这个节点还能请几次诊断。到了就转 needs_owner，不许 AI 反复来回。
+export function diagnosesLeft(run: AutopilotRun, node: string): number {
+  const used = diagnosesOf(run).filter(item => item.node === node).length;
+  return Math.max(0, MAX_DIAGNOSES_PER_NODE - used);
 }

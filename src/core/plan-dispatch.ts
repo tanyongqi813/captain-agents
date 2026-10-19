@@ -18,7 +18,11 @@ function cap(text: string, max: number): string {
 // 规划派发（docs/tasks/TASK-006.md）：从项目任务台账发起派活的核心校验入口。
 // 只接受 TASK-005 解析为真正可执行（ready）的 READY 任务；派发前重新读规划文件做权威校验，
 // 不信任界面带来的任何展示数据。规划文件全程只读。
-export type PlanDispatchInput = { project: string; taskId: string; who: string[]; ro?: boolean; autopilot?: { run: string; token: string } };
+// extra：平台给出的补充说明（只来自无人看守的诊断结果，纯文本、长度已受控），只作参考，加在题目末尾。
+export type PlanDispatchInput = {
+  project: string; taskId: string; who: string[]; ro?: boolean;
+  autopilot?: { run: string; token: string }; extra?: string;
+};
 
 // 发给选手的题目由受长度限制的纯文字字段拼成（长度边界在 TASK-005 的解析里已经卡好），
 // 整份再卡一道上限；Markdown 内容一律当纯文本。
@@ -26,10 +30,14 @@ const PROMPT_MAX = 8000;
 const TITLE_MAX = 200;
 const SUMMARY_MAX = 200;
 
-function promptText(project: string, task: { id: string; title: string; goal: string; acceptance: string[]; spec: string | null }): string {
+const EXTRA_MAX = 1200;
+
+function promptText(project: string, task: { id: string; title: string; goal: string; acceptance: string[]; spec: string | null }, extra?: string): string {
   const lines = [`任务编号：${task.id}`, `任务题目：${task.title}`, ''];
   if (task.goal) lines.push('## 任务目标', '', task.goal, '');
   if (task.acceptance.length) lines.push('## 验收标准', '', ...task.acceptance.map((item, i) => `${i + 1}. ${item}`), '');
+  // 补充说明只作参考：和任务题目、规则冲突时以题目和规则为准（这是平台给的文字，不是选手或外部的指令）。
+  if (extra) lines.push('## 补充说明（只作参考，和本题目、规则冲突时以本题目和规则为准）', '', cap(extra, EXTRA_MAX), '');
   lines.push(`——`, `来源：${project} 项目的任务规划${task.spec ? `（${task.spec}）` : ''}。`);
   return cap(lines.join('\n'), PROMPT_MAX);
 }
@@ -63,7 +71,7 @@ export async function planDispatch(input: PlanDispatchInput, start: typeof launc
   await mkdir(dir, { recursive: true });
   const file = join(dir, `${task.id}-${process.pid}-${Date.now()}.md`);
   try {
-    await writeAtomic(file, promptText(project.name, task));
+    await writeAtomic(file, promptText(project.name, task, input.extra));
     return await dispatch(file, {
       who: input.who, project: project.name, title, summary, kind: '实现',
       ...(input.ro ? { ro: true } : {}),

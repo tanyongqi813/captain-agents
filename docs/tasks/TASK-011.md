@@ -1,6 +1,6 @@
 # TASK-011：安全细拆、专用副本与自动验收闭环
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P1`
 - 难度等级：`High`
 - 前置任务：`TASK-010` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

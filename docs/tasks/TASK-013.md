@@ -1,6 +1,6 @@
 # TASK-013：需要主人事件与飞书可靠投递底座
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P1`
 - 难度等级：`High`
 - 前置任务：`TASK-010` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

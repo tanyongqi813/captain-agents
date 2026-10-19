@@ -58,6 +58,8 @@ const retire = (id: string) => updateAutopilot(id, current => {
   current.ended ??= new Date().toISOString();
   current.reason = '测试收尾。';
   delete current.limit; delete current.pid; delete current.pidSince;
+  // 收尾要干净：需要主人的原因码和事件号只属于 needs_owner。
+  delete current.ownerCode; delete current.ownerNote; delete current.ownerEvent; delete current.action; delete current.nextPrompt;
 });
 
 const readyFiles = {
@@ -362,6 +364,37 @@ test('被改过或被写坏的登记一律失败关闭：策略、编号、布�
       run.action = { token: 't', node: 'TASK-002', attempt: 1, at };
     }, /还挂着待确认动作/],
     ['预算标记挂在没结束的状态', run => { run.limit = 'minutes'; }, /预算上限标记只属于 needs_owner/],
+    ['动作类型不认识', run => { run.action = { token: 't', node: 'TASK-002', attempt: 1, at, phase: 'verify' }; }, /动作类型不认识/],
+    ['动作方式不认识', run => { run.action = { token: 't', node: 'TASK-002', attempt: 1, at, mode: 'unknown' }; }, /动作方式不认识/],
+    ['重试缺少来源', run => { run.action = { token: 't', node: 'TASK-002', attempt: 1, at, mode: 'retry' }; }, /重试缺少来源/],
+    ['补做动作缺补充题目', run => { run.action = { token: 't', node: 'TASK-002', attempt: 1, at, mode: 'continue' }; }, /补做的动作缺少补充题目/],
+    ['诊断记录不是数组', run => { run.diagnoses = {}; }, /诊断记录不是数组/],
+    ['诊断指纹不是十六进制', run => { run.diagnoses = [{ node: 'TASK-002', attempt: 1, at, token: 'd1', fingerprint: 'NOT-A-FINGERPRINT' }]; }, /诊断指纹无效/],
+    ['诊断动作不在白名单里', run => { run.diagnoses = [{ node: 'TASK-002', attempt: 1, at, token: 'd1', fingerprint: 'abcdef0123456789', action: 'rollback' }]; }, /诊断动作不认识/],
+    ['诊断原因码不认识', run => { run.diagnoses = [{ node: 'TASK-002', attempt: 1, at, token: 'd1', fingerprint: 'abcdef0123456789', code: 'whatever' }]; }, /诊断原因码不认识/],
+    ['诊断任务号无效', run => { run.diagnoses = [{ node: 'TASK-002', attempt: 1, at, token: 'd1', fingerprint: 'abcdef0123456789', jobs: 'diag-1' }]; }, /诊断任务号无效/],
+    ['诊断用量无效', run => { run.diagnoses = [{ node: 'TASK-002', attempt: 1, at, token: 'd1', fingerprint: 'abcdef0123456789', usage: { read: -1, cached: 0, out: 0 } }]; }, /诊断用量记录无效/],
+    ['原因码不认识', run => { run.state = 'needs_owner'; run.ended = at; run.reason = '看看。'; run.ownerCode = 'whatever'; }, /原因码不认识/],
+    ['原因码挂在没结束的状态', run => { run.ownerCode = 'owner_requested'; }, /原因码只属于 needs_owner/],
+    ['原因补给挂在没结束的状态', run => { run.ownerNote = '再说一句。'; }, /原因补充只属于 needs_owner/],
+    ['细拆候选图有重号', run => {
+      run.state = 'needs_owner'; run.ended = at; run.reason = '拆开。'; run.ownerCode = 'split_pending';
+      const node = { id: 'same', title: '一件', goal: '做完', acceptance: '测试通过', deps: [] };
+      run.split = { at, source: '太大', nodes: [node, node] };
+    }, /编号重复/],
+    ['细拆候选图有循环依赖', run => {
+      run.state = 'needs_owner'; run.ended = at; run.reason = '拆开。'; run.ownerCode = 'split_pending';
+      run.split = { at, source: '太大', nodes: [
+        { id: 'a', title: '一件', goal: '做完', acceptance: '测试通过', deps: ['b'] },
+        { id: 'b', title: '另一件', goal: '做完', acceptance: '测试通过', deps: ['a'] },
+      ] };
+    }, /循环依赖/],
+    ['待用补充题目的方式不认识', run => { run.nextPrompt = { node: 'TASK-002', mode: 'redo', prompt: '再来' }; }, /待用的补充题目方式不认识/],
+    ['待用补充题目的节点编号无效', run => { run.nextPrompt = { node: '', mode: 'retry', prompt: '再来' }; }, /待用的节点编号无效/],
+    ['结束状态还挂着待用补充题目', run => {
+      run.state = 'stopped'; run.ended = at; run.reason = '收手了。';
+      run.nextPrompt = { node: 'TASK-002', mode: 'retry', prompt: '再来' };
+    }, /还挂着待用的补充题目/],
     ['版本不认识', run => { run.version = 99; }, /版本不认识/],
     ['起点提交不像提交', run => { run.base = 'main'; }, /起点提交无效/],
   ];
@@ -450,4 +483,91 @@ test('推进器没能启动时，start 的报错直接给出可以照敲的 resu
   assert.equal(runs.length, 1);
   assert.equal(runs[0].state, 'recovering');
   assert.match(String(runs[0].reason), /autopilot resume/);
+});
+
+test('旧版本写下的登记（没有诊断、细拆、原因码这些新字段）照样读得出来', async t => {
+  await autopilotProject(t, readyFiles);
+  const run = await createAutopilot({ project: 'demo', taskId: 'TASK-002', who: ['codex:high'] });
+  const raw = JSON.parse(await readFile(runFile(run.id), 'utf8'));
+  // 新字段都是可选的：TASK-009 那一版根本不写它们，新建的登记里也不会凭空多出来。
+  for (const key of ['diagnoses', 'split', 'ownerCode', 'ownerNote', 'nextPrompt', 'ownerEvent']) assert.equal(raw[key], undefined, `新登记不该凭空多出 ${key}`);
+  // 照 TASK-009 那一版的收尾来一份：等主人，只有一句原因，没有结构化原因码。
+  raw.state = 'needs_owner';
+  raw.ended = new Date().toISOString();
+  raw.reason = '无人看守这一版还没有自动审查和验收，TASK-002 的这次执行结果请主人接手看。';
+  raw.attempts = [{ node: 'TASK-002', attempt: 1, token: 'token-old', at: raw.created, outcome: 'done' }];
+  raw.attemptCount = 1;
+  raw.nodes[0].attempts = 1;
+  raw.nodes[0].state = 'passed';
+  await writeFile(runFile(run.id), JSON.stringify(raw, null, 2));
+  const read = await readAutopilot(run.id);
+  assert.equal(read.state, 'needs_owner');
+  assert.equal(read.ownerCode, undefined);
+  assert.equal(read.diagnoses, undefined);
+  assert.equal(read.split, undefined);
+  assert.deepEqual(read.attempts.map(item => item.outcome), ['done']);
+  assert.match(String(read.reason), /请主人接手看/);
+});
+
+test('诊断之后的四条出路写在状态机里：continue、verify、owner 各有条件，恢复能接回诊断', async t => {
+  await autopilotProject(t, readyFiles);
+  const run = await createAutopilot({ project: 'demo', taskId: 'TASK-002', who: ['codex:high'] });
+  advance(run, { kind: 'intent' });
+  advance(run, { kind: 'failed', note: '这一次没成。' });
+  assert.equal(run.state, 'diagnosing');
+  // 诊断说"转验收"：进 verifying。
+  assert.equal(advance(run, { kind: 'verify' }), true);
+  assert.equal(run.state, 'verifying');
+  assert.deepEqual(advance(run, { kind: 'continue' }), false, '在验收状态里不能补做');
+  // 验收失败还能回诊断，然后重试。
+  assert.equal(advance(run, { kind: 'failed' }), true);
+  assert.equal(advance(run, { kind: 'continue' }), true);
+  assert.equal(run.state, 'executing');
+  assert.equal(run.reason, undefined, '决定继续之后不再挂着上次失败的原因');
+  // 诊断说"交给主人"：带原因码和一句补充。
+  assert.equal(advance(run, { kind: 'failed' }), true);
+  assert.equal(advance(run, { kind: 'owner', code: 'owner_requested', note: '要读主人的登录文件' }), true);
+  assert.equal(run.state, 'needs_owner');
+  assert.equal(run.ownerCode, 'owner_requested');
+  assert.equal(run.ownerNote, '要读主人的登录文件');
+  assert.match(run.reason!, /负责人 AI 判断这件事不能自动处理/);
+  for (const event of [{ kind: 'continue' }, { kind: 'retry' }, { kind: 'verify' }] as const) {
+    assert.equal(advance(run, event), false, '收尾之后什么都推不动');
+  }
+  // 恢复：诊断中途推进器丢了，回来要接回"在诊断"，不能当成"在干"。
+  await retire(run.id);
+  const second = await createAutopilot({ project: 'demo', taskId: 'TASK-002', who: ['codex:high'] });
+  advance(second, { kind: 'intent' });
+  advance(second, { kind: 'failed' });
+  assert.equal(advance(second, { kind: 'lost', note: '推进进程不在了。' }), true);
+  assert.equal(advance(second, { kind: 'resume', phase: 'diagnose' }), true);
+  assert.equal(second.state, 'diagnosing');
+  assert.equal(advance(second, { kind: 'budget', limit: 'nodes' }), true);
+  assert.equal(second.state, 'needs_owner');
+  assert.match(second.reason!, /子节点数预算用完了/);
+});
+
+test('需要主人时同一次改写里写下稳定的事件编号：一台执行只有一个，停下和完成都没有', async t => {
+  await autopilotProject(t, readyFiles);
+  const run = await createAutopilot({ project: 'demo', taskId: 'TASK-002', who: ['codex:high'] });
+  // 真的落盘再读回来：编号和状态在同一次锁内改写里写下去（TASK-013 靠它做"同一件事不重复通知"）。
+  await updateAutopilot(run.id, current => {
+    advance(current, { kind: 'intent' });
+    advance(current, { kind: 'failed' });
+    advance(current, { kind: 'owner', code: 'owner_requested', note: '要读登录文件' });
+  });
+  const saved = await readAutopilot(run.id);
+  assert.equal(saved.state, 'needs_owner');
+  assert.equal(saved.ownerCode, 'owner_requested');
+  assert.match(String(saved.ownerEvent), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  // 已经收尾的登记推不动，也就不会再生成第二个事件编号。
+  assert.equal(advance(saved, { kind: 'owner', code: 'diagnosis_loop' }), false);
+  const again = await readAutopilot(run.id);
+  assert.equal(again.ownerEvent, saved.ownerEvent);
+  // 预算是另一条需要主人的路，同样带事件编号。
+  await retire(run.id);
+  assert.equal((await readAutopilot(run.id)).ownerEvent, undefined, '主人自己收手不算需要主人通知');
+  const second = await createAutopilot({ project: 'demo', taskId: 'TASK-002', who: ['codex:high'] });
+  await updateAutopilot(second.id, current => { advance(current, { kind: 'intent' }); advance(current, { kind: 'budget', limit: 'minutes' }); });
+  assert.match(String((await readAutopilot(second.id)).ownerEvent), /^[0-9a-f]{8}-/);
 });
