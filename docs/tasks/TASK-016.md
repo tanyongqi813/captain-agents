@@ -1,6 +1,6 @@
 # TASK-016：正常复审沉淀评分与难度证据
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：`TASK-011`、`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

@@ -18,15 +18,15 @@
 | [TASK-012](tasks/TASK-012.md) | 无人看守控制台与恢复证据展示 | PASSED | P2 | Medium | TASK-011、TASK-013 PASSED |
 | [TASK-013](tasks/TASK-013.md) | 需要主人事件与飞书可靠投递底座 | PASSED | P1 | High | TASK-010 PASSED |
 | [TASK-014](tasks/TASK-014.md) | 设置页接入飞书机器人 | PASSED | P2 | High | TASK-013 PASSED |
-| [TASK-015](tasks/TASK-015.md) | 按完成总成本生成派活参考 | DRAFT | P2 | High | TASK-017 PASSED |
-| [TASK-016](tasks/TASK-016.md) | 正常复审沉淀评分与难度证据 | DRAFT | P2 | High | TASK-011、TASK-017 PASSED |
-| [TASK-017](tasks/TASK-017.md) | 完成成本账本与中转站计价依据 | READY | P2 | High | 无 |
-| [TASK-018](tasks/TASK-018.md) | 设置成本资料与额度未知时的预算 | DRAFT | P2 | High | TASK-017 PASSED |
+| [TASK-015](tasks/TASK-015.md) | 按完成总成本生成派活参考 | READY | P2 | High | TASK-017 PASSED |
+| [TASK-016](tasks/TASK-016.md) | 正常复审沉淀评分与难度证据 | READY | P2 | High | TASK-011、TASK-017 PASSED |
+| [TASK-017](tasks/TASK-017.md) | 完成成本账本与中转站计价依据 | PASSED | P2 | High | 无 |
+| [TASK-018](tasks/TASK-018.md) | 设置成本资料与额度未知时的预算 | READY | P2 | High | TASK-017 PASSED |
 | [TASK-019](tasks/TASK-019.md) | Kimi 套餐查询与多窗口派发检查 | PASSED | P2 | High | 无 |
 
 ## 当前阶段
 
-- 可执行：P1 TASK-010/011/013 与 P2 TASK-012/014/019 已完成，诊断、独立审查、登记验收、显式控制台与飞书连接入口已打通。当前先交付可用版本；下一阶段入口 TASK-017（P2 / READY），TASK-015/016/018 等待其成本数据契约。保留已有独立副本，禁止整文件覆盖其他任务的新改动。
+- 可执行：P1 TASK-010/011/013 与 P2 TASK-012/014/019 已完成。TASK-017 三轮复审通过，成本账本契约已可使用；TASK-015/016/018 前置满足并进入 READY，下一项先做 TASK-015（P2 / High）。本次不启动实现。保留已有独立副本，禁止整文件覆盖其他任务的新改动。
 - 项目登记链：先打通安全、可测试的后台登记能力；界面和后续管理不能绕过该能力直接操作路径或登记文件。
 - 规划驱动链：先统一负责人对任务台账的理解，再实现解析，最后接入工作台界面和派发；Task Spec 的推荐执行者不约束工作台选手。
 - 无人看守链：先让每次执行都能有界停止并留下证据，再建自治执行台账和推进器，然后接负责人 AI 诊断/恢复，最后开放细拆、审查、验收和界面；任何阶段都不得无限重试。

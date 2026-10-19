@@ -1,6 +1,6 @@
 # TASK-018：设置成本资料与额度未知时的预算
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

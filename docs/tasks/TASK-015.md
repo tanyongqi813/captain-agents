@@ -1,6 +1,6 @@
 # TASK-015：按完成总成本生成派活参考
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`；沿用现有 roster、settings、quota、profiles 和任务记录
