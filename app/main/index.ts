@@ -1,6 +1,6 @@
 import { refreshModelsWithBaseline, readModelsCache } from '../../src/core/models.ts';
 import { modelsRefresher, modelsRefreshHandler, modelsKeepHandler, modelsAddHandler, modelsScheduler } from './models.ts';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, nativeTheme, net, protocol, screen, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, nativeTheme, net, protocol, safeStorage, screen, session, shell } from 'electron';
 import { connect, connectArgument, connectStatus, disconnect } from '../../src/core/connect.ts';
 import { INTRO_TEXT } from '../../src/core/intro.ts';
 import { realpath, stat } from 'node:fs/promises';
@@ -24,6 +24,7 @@ import { applyAppearance, syncBackground, titleBarOverlay, windowBackground } fr
 import { jobActions, quotaRefreshHandler, quotaRefresher, settingsActions, teamActions, chatActions, planActions, planSpecActions } from './actions.ts';
 import { noticeTitle, notificationTracker } from './notifications.ts';
 import type { Notice } from './notifications.ts';
+import { feishuCredentialStore, feishuNotificationScheduler } from './feishu-notifications.ts';
 import { createTray } from './tray.ts';
 import { readIcon } from './icons.ts';
 import { installIcons } from '../../src/core/icons.ts';
@@ -109,6 +110,7 @@ let tray: ReturnType<typeof createTray> | undefined;
 let pendingOpen: Destination | undefined;
 let track: Awaited<ReturnType<typeof notificationTracker>> | undefined;
 let notificationWork = Promise.resolve();
+let ownerNotifier: ReturnType<typeof feishuNotificationScheduler> | undefined;
 const liveNotifications = new Set<Notification>();
 // 项目选择令牌只在这个进程的内存里；窗口一关就清掉。见 app/main/project-bridge.ts。
 const projectTokens = projectSelections();
@@ -129,6 +131,7 @@ function publish(view: View) {
   tray?.update(view);
   if (window && !window.isDestroyed()) window.webContents.send(channels.view, view);
   if (track) notificationWork = track(view).catch(console.error);
+  void ownerNotifier?.wake();
 }
 function sendNotice(notice: Notice) {
   if (e2eNotices) { e2eNotices.push(notice); return; }
@@ -214,6 +217,7 @@ else {
     closeWatch?.();
     modelSchedule?.stop();
     if (quotaTimer) clearInterval(quotaTimer);
+    ownerNotifier?.stop();
     slimmer?.stop();
     updater?.stop();
     tray?.destroy(); tray = undefined;
@@ -223,7 +227,7 @@ else {
         const bounds = window.getNormalBounds();
         saving = saving.then(() => saveBounds(app.getPath('userData'), bounds)).catch(console.error);
       }
-      void Promise.all([saving, notificationWork]).finally(() => app.quit());
+      void Promise.all([saving, notificationWork, ownerNotifier?.settled()]).finally(() => app.quit());
     }
   });
   void app.whenReady().then(async () => {
@@ -427,7 +431,16 @@ else {
     if (e2eNotices) Object.defineProperty(globalThis, '__xaE2E', { value: { notices: e2eNotices, tray: () => tray?.inspect() }, configurable: true });
     await startDesktop({
       openWindow,
-      startNotifications: async () => { track = await notificationTracker(app.getPath('userData'), sendNotice); },
+      startNotifications: async () => {
+        track = await notificationTracker(app.getPath('userData'), sendNotice);
+        if (!e2eHidden) {
+          const credentials = feishuCredentialStore(app.getPath('userData'), safeStorage);
+          ownerNotifier = feishuNotificationScheduler({ credentials: credentials.read }, {
+            onError: () => console.error('飞书通知本轮未完成，已保留待发事件。'),
+          });
+          ownerNotifier.start();
+        }
+      },
       startWatching: async () => { closeWatch = await watchRegistry(() => !exiting, publish, console.error, readDesktopView, undefined, true); },
       refresh: async () => { publish(await readDesktopView()); await notificationWork; },
       onError: console.error,

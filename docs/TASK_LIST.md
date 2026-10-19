@@ -16,8 +16,8 @@
 | [TASK-010](tasks/TASK-010.md) | 负责人 AI 诊断与有界恢复协议 | PASSED | P1 | High | TASK-009 PASSED |
 | [TASK-011](tasks/TASK-011.md) | 安全细拆、专用副本与自动验收闭环 | READY | P1 | High | TASK-010 PASSED |
 | [TASK-012](tasks/TASK-012.md) | 无人看守控制台与恢复证据展示 | DRAFT | P2 | Medium | TASK-011、TASK-013 PASSED |
-| [TASK-013](tasks/TASK-013.md) | 需要主人事件与飞书可靠投递底座 | READY | P1 | High | TASK-010 PASSED |
-| [TASK-014](tasks/TASK-014.md) | 设置页接入飞书机器人 | DRAFT | P2 | High | TASK-013 PASSED |
+| [TASK-013](tasks/TASK-013.md) | 需要主人事件与飞书可靠投递底座 | PASSED | P1 | High | TASK-010 PASSED |
+| [TASK-014](tasks/TASK-014.md) | 设置页接入飞书机器人 | READY | P2 | High | TASK-013 PASSED |
 | [TASK-015](tasks/TASK-015.md) | 按完成总成本生成派活参考 | DRAFT | P2 | High | TASK-017 PASSED |
 | [TASK-016](tasks/TASK-016.md) | 正常复审沉淀评分与难度证据 | DRAFT | P2 | High | TASK-011、TASK-017 PASSED |
 | [TASK-017](tasks/TASK-017.md) | 完成成本账本与中转站计价依据 | READY | P2 | High | 无 |

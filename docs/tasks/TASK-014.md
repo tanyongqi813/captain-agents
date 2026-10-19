@@ -1,6 +1,6 @@
 # TASK-014：设置页接入飞书机器人
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：`TASK-013` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
