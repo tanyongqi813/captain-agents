@@ -14,8 +14,8 @@
 | [TASK-008](tasks/TASK-008.md) | 执行预算、停滞判定与可靠收尾 | PASSED | P1 | High | 无 |
 | [TASK-009](tasks/TASK-009.md) | 自治执行记录与确定性推进器 | PASSED | P1 | High | TASK-006、TASK-008 PASSED |
 | [TASK-010](tasks/TASK-010.md) | 负责人 AI 诊断与有界恢复协议 | PASSED | P1 | High | TASK-009 PASSED |
-| [TASK-011](tasks/TASK-011.md) | 安全细拆、专用副本与自动验收闭环 | READY | P1 | High | TASK-010 PASSED |
-| [TASK-012](tasks/TASK-012.md) | 无人看守控制台与恢复证据展示 | DRAFT | P2 | Medium | TASK-011、TASK-013 PASSED |
+| [TASK-011](tasks/TASK-011.md) | 安全细拆、专用副本与自动验收闭环 | PASSED | P1 | High | TASK-010 PASSED |
+| [TASK-012](tasks/TASK-012.md) | 无人看守控制台与恢复证据展示 | READY | P2 | Medium | TASK-011、TASK-013 PASSED |
 | [TASK-013](tasks/TASK-013.md) | 需要主人事件与飞书可靠投递底座 | PASSED | P1 | High | TASK-010 PASSED |
 | [TASK-014](tasks/TASK-014.md) | 设置页接入飞书机器人 | READY | P2 | High | TASK-013 PASSED |
 | [TASK-015](tasks/TASK-015.md) | 按完成总成本生成派活参考 | DRAFT | P2 | High | TASK-017 PASSED |
@@ -26,7 +26,7 @@
 
 ## 当前阶段
 
-- 可执行：TASK-010 已修正通过并整合；P1 TASK-011/013 已解除前置锁定，先完成求助通知底座，再接安全细拆与自动验收闭环。TASK-019 可独立修正；成本链入口为 P2 TASK-017，TASK-015 仍等待成本数据。保留已有独立副本，禁止整文件覆盖其他任务的新改动。
+- 可执行：P1 TASK-010/011/013 已完成，诊断、求助通知及安全审查验收闭环已经打通。当前优先补齐 P2 TASK-012 操作界面、TASK-019 Kimi 修正、TASK-014 飞书连接入口；成本链入口 TASK-017 仍 READY，TASK-015 等待成本数据。保留已有独立副本，禁止整文件覆盖其他任务的新改动。
 - 项目登记链：先打通安全、可测试的后台登记能力；界面和后续管理不能绕过该能力直接操作路径或登记文件。
 - 规划驱动链：先统一负责人对任务台账的理解，再实现解析，最后接入工作台界面和派发；Task Spec 的推荐执行者不约束工作台选手。
 - 无人看守链：先让每次执行都能有界停止并留下证据，再建自治执行台账和推进器，然后接负责人 AI 诊断/恢复，最后开放细拆、审查、验收和界面；任何阶段都不得无限重试。

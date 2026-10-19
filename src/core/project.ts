@@ -16,7 +16,7 @@ import type { Budget } from './budget.ts';
 // check：最近一次接入体检；baseline：完整体检时在干净副本里跑出的验收底子。
 // budget：执行预算（停滞/宽限/单次总上限分钟），缺省 20/5/120；旧登记没有这一字段。
 export type Project = { name: string; label?: string; repo: string; worktreeRoot: string; setup: string[]; verify: string[]; denyReadExtra: string[]; rules?: string;
-  check?: ProjectCheck; baseline?: { at: string; ok: boolean; steps: VerifyStep[] }; budget?: Budget };
+  check?: ProjectCheck; baseline?: { at: string; ok: boolean; steps: VerifyStep[] }; budget?: Budget; verifyTimeoutMinutes?: number };
 export function relativePath(path: string) {
   if (!path || isAbsolute(path) || path.split(/[\\/]/).includes('..') || path === '.') throw new Error(`路径必须在仓库内且不能包含 ..：${path}。请填写相对路径。`);
   return path;

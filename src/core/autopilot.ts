@@ -11,6 +11,7 @@ import { selection } from './workers.ts';
 import { readyTask } from './plan-dispatch.ts';
 import { checkSplitGraph, isDiagnosisAction, isOwnerCode, MAX_SPLIT_DEPTH, ownerReasons } from './autopilot-diagnosis.ts';
 import type { DiagnosisAction, OwnerCode, SplitNode } from './autopilot-diagnosis.ts';
+import type { Job } from './job.ts';
 
 // 无人看守（有界自治）的执行登记。设计见 docs/decisions/ADR-001-bounded-autonomy.md 与 docs/tasks/TASK-009.md。
 // 全局状态单独落盘在 ~/.xagents/autopilots/<编号>/run.json，不塞进 Job 或 Batch：
@@ -69,7 +70,7 @@ export const MAX_DIAGNOSES_PER_NODE = 3;
 // mode：诊断决定"补做"时是 continue（叫醒上一轮那件活，保住副本里的改动），其余是 execute（从起点新派）。
 export type AutopilotAction = {
   token: string; node: string; attempt: number; at: string; jobs?: string[];
-  phase?: 'execute' | 'diagnose'; mode?: 'execute' | 'continue' | 'retry'; prompt?: string;
+  phase?: 'execute' | 'diagnose' | 'review'; mode?: 'execute' | 'continue' | 'retry'; prompt?: string;
   retrySource?: string[];
   // 补做要叫醒哪几件活、各叫到第几轮（mode=continue 才有）。先落盘再动手：崩溃后靠它分清"只预留"和"真的叫醒了"，
   // 不会把旧一轮的结果认成新一轮（docs/tasks/TASK-010.md 评审第 5 条）。
@@ -82,8 +83,17 @@ export type AutopilotAttempt = {
   // 这一次尝试花掉的用量（只记这一次实际用掉的，旧登记没有这一字段，按 0 算）。
   // job.usage 是"当前这一轮"的用量（续轮开始时清空，归过档的取轮记录），所以这里不再相减。
   usage?: { read: number; cached: number; out: number };
+  patch?: string;
 };
-export type AutopilotNode = { id: string; depth: number; state: 'pending' | 'running' | 'passed' | 'failed'; attempts: number; continues: number; retries: number };
+export type AutopilotNode = { id: string; depth: number; state: 'pending' | 'running' | 'passed' | 'failed' | 'split'; attempts: number; continues: number; retries: number; parent?: string; task?: SplitNode };
+export type AutopilotReview = { token: string; node: string; at: string; candidate: string; jobs?: string[]; verdict?: 'pass' | 'changes' | 'unclear'; usage?: { read: number; cached: number; out: number } };
+export type AutopilotFlow = {
+  version: 1; reviewer: string; accepted: string;
+  candidate?: { hash: string; node: string; jobs: string[] };
+  reviews: AutopilotReview[];
+  verifyStarted?: string;
+  verification?: { ok: boolean; at: string; seconds: number; steps: { cmd: string; ok: boolean; exit: number | null; summary: string }[] };
+};
 
 // 一次诊断（docs/tasks/TASK-010.md）：证据指纹、请的是哪一件负责人任务、最后决定和原因码。
 // 指纹 + 动作相同就是循环；code 是给主人看的结构化原因（TASK-013 拿它发通知，不再调 AI 编文字）。
@@ -127,6 +137,7 @@ export type AutopilotRun = {
   usageLimit?: number;        // 已知用量的上限（有才判），没有就只累计不拦
   action?: AutopilotAction;
   nodes: AutopilotNode[];
+  flow?: AutopilotFlow;
   attempts: AutopilotAttempt[];
   // 诊断历史与细拆候选（TASK-010 新增；旧登记没有这两个字段，读作空）。
   diagnoses?: AutopilotDiagnosis[];
@@ -143,6 +154,7 @@ export type AutopilotStartOptions = {
   who: string[];
   policy?: string;
   ro?: boolean;
+  reviewer?: string;
 };
 
 const RUN_MAX_BYTES = 2 * 1024 * 1024;
@@ -245,7 +257,8 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
     if (!isCount(pending.attempt) || pending.attempt < 1) throw bad('动作尝试序号无效');
     if (!isWhen(pending.at)) throw bad('动作时间无效');
     if (pending.jobs !== undefined && !isIds(pending.jobs)) throw bad('动作任务号无效');
-    if (pending.phase !== undefined && pending.phase !== 'execute' && pending.phase !== 'diagnose') throw bad('动作类型不认识');
+    if (pending.phase !== undefined && !['execute', 'diagnose', 'review'].includes(String(pending.phase))) throw bad('动作类型不认识');
+    if (pending.phase === 'review' && !run.flow) throw bad('审查动作缺少闭环登记');
     if (pending.mode !== undefined && pending.mode !== 'execute' && pending.mode !== 'continue' && pending.mode !== 'retry') throw bad('动作方式不认识');
     if (pending.retrySource !== undefined && (!isIds(pending.retrySource) || !pending.retrySource.length)) throw bad('重试来源无效');
     if (pending.mode === 'retry' && pending.retrySource === undefined) throw bad('重试缺少来源');
@@ -270,7 +283,13 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
     const node = item as Record<string, unknown>;
     if (!isText(node.id, 200)) throw bad('节点编号无效');
     if (!isCount(node.depth) || node.depth > MAX_DEPTH) throw bad(`节点深度超过 ${MAX_DEPTH}`);
-    if (typeof node.state !== 'string' || !['pending', 'running', 'passed', 'failed'].includes(node.state)) throw bad('节点状态不认识');
+    if (typeof node.state !== 'string' || !['pending', 'running', 'passed', 'failed', 'split'].includes(node.state)) throw bad('节点状态不认识');
+    if (node.parent !== undefined && (!isText(node.parent, 200) || !nodes.some(n => n?.id === node.parent))) throw bad('父节点无效');
+    if (node.task !== undefined) {
+      try { checkSplitGraph([{ ...(node.task as SplitNode), deps: [] }]); } catch { throw bad('子节点题目无效'); }
+      if ((node.task as SplitNode).id !== node.id || !Array.isArray((node.task as SplitNode).deps)
+        || (node.task as SplitNode).deps.some(dep => !nodes.some(n => n?.id === dep))) throw bad('子节点依赖无效');
+    }
     if (!isCount(node.attempts)) throw bad('节点尝试次数无效');
     if (!isCount(node.continues) || node.continues > MAX_CONTINUES_PER_NODE) throw bad('节点续做次数超过上限');
     if (!isCount(node.retries) || node.retries > MAX_RETRIES_PER_NODE) throw bad('节点重试次数超过上限');
@@ -288,6 +307,7 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
     if (attempt.jobs !== undefined && !isIds(attempt.jobs)) throw bad('尝试的任务号无效');
     if (attempt.outcome !== undefined && (typeof attempt.outcome !== 'string' || !['done', 'failed', 'blocked'].includes(attempt.outcome))) throw bad('尝试结局不认识');
     if (attempt.note !== undefined && !isText(attempt.note, 500)) throw bad('尝试备注无效');
+    if (attempt.patch !== undefined && (typeof attempt.patch !== 'string' || !/^[a-f0-9]{64}$/.test(attempt.patch))) throw bad('尝试补丁快照无效');
     if (attempt.usage !== undefined) {
       const spent = attempt.usage;
       if (!spent || typeof spent !== 'object' || Array.isArray(spent)) throw bad('尝试用量记录无效');
@@ -297,8 +317,43 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
   }
   if (attempts.length !== run.attemptCount) throw bad(`尝试次数和记录对不上（${attempts.length} 条记录 / 计数 ${String(run.attemptCount)}）`);
   if (nodes.length !== run.nodeCount) throw bad(`节点数和记录对不上（${nodes.length} 条记录 / 计数 ${String(run.nodeCount)}）`);
+  if (new Set(nodes.map(n => n.id)).size !== nodes.length) throw bad('节点编号重复');
+  if (run.flow !== undefined) {
+    const flow = run.flow as AutopilotFlow;
+    const hash = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+    if (!flow || flow.version !== 1 || !isText(flow.reviewer, 100) || !WHO_SHAPE.test(flow.reviewer) || !hash(flow.accepted)
+      || !Array.isArray(flow.reviews) || flow.reviews.length > PRESETS.long.attempts || who.length !== 1 || run.ro) throw bad('闭环登记无效');
+    try { if (selection(flow.reviewer).who === selection(String(who[0])).who) throw new Error(); } catch { throw bad('审查者必须独立选择'); }
+    if (flow.candidate && (!hash(flow.candidate.hash) || !nodes.some(n => n.id === flow.candidate!.node) || !isIds(flow.candidate.jobs) || !flow.candidate.jobs.length)) throw bad('候选补丁无效');
+    for (const review of flow.reviews) {
+      if (!review || !isText(review.token, 200) || !isWhen(review.at) || !nodes.some(n => n.id === review.node) || !hash(review.candidate)
+        || review.jobs !== undefined && !isIds(review.jobs) || review.verdict !== undefined && !['pass', 'changes', 'unclear'].includes(review.verdict)) throw bad('审查记录无效');
+      if (review.usage && (!isNumber(review.usage.read) || !isNumber(review.usage.cached) || !isNumber(review.usage.out))) throw bad('审查用量无效');
+    }
+    if (flow.verification && (typeof flow.verification.ok !== 'boolean' || !isWhen(flow.verification.at) || !isNumber(flow.verification.seconds)
+      || !Array.isArray(flow.verification.steps) || flow.verification.steps.some(s => !s || typeof s.cmd !== 'string' || typeof s.ok !== 'boolean'
+        || typeof s.summary !== 'string' || s.exit !== null && !Number.isInteger(s.exit)))) throw bad('闭环验收记录无效');
+    if (flow.verifyStarted !== undefined && !isWhen(flow.verifyStarted)) throw bad('验收启动记录无效');
+    const visiting = new Set<string>(), visited = new Set<string>();
+    const walk = (id: string, depth: number) => {
+      if (depth > nodes.length || visiting.has(id)) throw bad('节点依赖有环');
+      if (visited.has(id)) return;
+      visiting.add(id);
+      for (const dep of nodes.find(n => n.id === id)!.task?.deps ?? []) walk(dep, depth + 1);
+      visiting.delete(id); visited.add(id);
+    };
+    for (const node of nodes) {
+      walk(node.id, 0);
+      if (node.parent && nodes.find(n => n.id === node.parent)!.depth + 1 !== node.depth) throw bad('父节点深度不一致');
+    }
+  }
   // 状态对应的不变量：结束状态必须有结束时间，没结束的不能有；结束之后不能再挂着待确认动作。
   const state = run.state as AutopilotState;
+  if (state === 'completed' && run.flow) {
+    const flow = run.flow as AutopilotFlow;
+    if (!flow.verification?.ok || flow.candidate || nodes.some(n => n.state !== 'passed')
+      || nodes.some(n => !nodes.some(c => c.parent === n.id) && !flow.reviews.some(r => r.node === n.id && r.verdict === 'pass'))) throw bad('缺少已通过的独立审查和最终验收');
+  }
   const ended = run.ended !== undefined;
   if (isEndedState(state) && !ended) throw bad(`${state} 状态缺少结束时间`);
   if (!isEndedState(state) && ended) throw bad(`${state} 状态不该有结束时间`);
@@ -409,6 +464,12 @@ export async function updateAutopilot(id: string, fn: (run: AutopilotRun) => voi
   });
 }
 
+export async function guardAutopilotJob(job: Pick<Job, 'autopilot'>): Promise<void> {
+  if (job.autopilot && isActiveState((await readAutopilot(job.autopilot.run)).state)) {
+    throw new Error('无人看守还在推进，不能单独清理、拍板或验收其中的任务；请先停止整台执行。');
+  }
+}
+
 // 带令牌改状态：这是"推进器互斥"的落点——两个推进器同时动手时，只有一个的令牌还是当前的，另一个被拒绝。
 export async function transition(id: string, token: string | undefined, fn: (run: AutopilotRun) => void | Promise<void>): Promise<AutopilotRun> {
   return updateAutopilot(id, async run => {
@@ -451,6 +512,10 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
   if (options.who.length > 6) throw new Error('无人看守的选手范围最多 6 位，请删掉几位。');
   if (options.who.some(item => typeof item !== 'string' || item.length > 100)) throw new Error('选手写法不对，请写成 选手:强度[:fast]。');
   if (options.ro !== undefined && typeof options.ro !== 'boolean') throw new Error('--ro 只能表示只读，不能带值。');
+  if (options.reviewer !== undefined && (typeof options.reviewer !== 'string' || !WHO_SHAPE.test(options.reviewer)
+    || options.who.length !== 1 || options.ro || selection(options.reviewer).who === selection(options.who[0]).who)) {
+    throw new Error('自动审查闭环必须明确选择一位可写执行者和另一位只读审查者。');
+  }
 
   const project = await findProject(projectName).catch(error => {
     // 没登记的项目给中文说法，不把 ENOENT 抛给主人。
@@ -462,6 +527,7 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
   // 选手范围必须在 roster 与主人策略之内（收窄可以，放宽不行）；真正的派活还会再校验一次。
   const choices = options.who.map(item => selection(item));
   for (const choice of choices) checkChoice(settings.workers, choice);
+  if (options.reviewer) checkChoice(settings.workers, selection(options.reviewer));
   // 权威校验：重新读项目的任务规划，只有 TASK-006 判定为可执行的任务才能启动。
   const { task } = await readyTask(project.name, options.taskId);
   const base = await projectBase(project.repo);
@@ -486,6 +552,8 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
       attemptCount: 0, nodeCount: 1,
       nodes: [{ id: task.id, depth: 0, state: 'pending', attempts: 0, continues: 0, retries: 0 }],
       attempts: [],
+      ...(options.reviewer ? { flow: { version: 1 as const, reviewer: options.reviewer,
+        accepted: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', reviews: [] } } : {}),
     };
     assertRun(JSON.parse(JSON.stringify(run)), id, `无人看守 ${id} 这次要写进去的登记不对`);
     await writeJson(runFile(id), run);
@@ -503,7 +571,7 @@ async function projectBase(repo: string): Promise<string> {
 // 外部 AI 尝试的总数：写手的每一轮 + 每一次负责人诊断。预设里的"4/10/16 次"是这台执行能调用 AI 的总次数，
 // 诊断同样花额度和时间，所以必须一起算（docs/tasks/TASK-010.md 评审第 2 条）。写手序号仍单独存在 attemptCount 里。
 export function aiAttempts(run: AutopilotRun): number {
-  return run.attemptCount + (run.diagnoses?.length ?? 0);
+  return run.attemptCount + (run.diagnoses?.length ?? 0) + (run.flow?.reviews.length ?? 0);
 }
 export function budgetUsed(run: AutopilotRun): { minutes: number; attempts: number; nodes: number; usage: number } {
   const usage = run.usage ? run.usage.read + run.usage.cached + run.usage.out : 0;

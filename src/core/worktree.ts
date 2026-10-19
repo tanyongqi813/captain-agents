@@ -90,8 +90,9 @@ export async function worktreeMissing(job: Pick<Job, 'worktree'>) {
 export async function saveDiff(job: Job) {
   if (!job.cleaned) await writeAtomic(join(jobDir(job.id), 'diff.patch'), await diff(job));
 }
-export async function removeWorktree(job: Pick<Job, 'repo' | 'worktree' | 'branch' | 'chat'>) {
+export async function removeWorktree(job: Pick<Job, 'repo' | 'worktree' | 'branch' | 'chat' | 'autopilot' | 'autopilotRole'>) {
   if (job.chat) return; // 群副本和分支归群所有，只有 cleanChat 能删除。
+  if (job.autopilot && job.autopilotRole) return; // 自治执行共用副本和补丁证据归整台执行所有。
   const entries = (await git(job.repo, ['worktree', 'list', '--porcelain', '-z'])).split('\0');
   if (entries.some(entry => entry.startsWith('worktree ') && samePath(entry.slice('worktree '.length), job.worktree))) await git(job.repo, ['worktree', 'remove', '--force', job.worktree]);
   else {

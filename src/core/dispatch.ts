@@ -25,10 +25,11 @@ import { isolationOf, vendorOf } from './roster.ts';
 import { initialRealCheck } from './real.ts';
 import { readChat } from './chat.ts';
 import { assertDeepseekAvailable } from './deepseek-settings.ts';
+import { sharedAutopilotWorktree } from './autopilot-worktree.ts';
 
 // team：小队派的队员（docs/design-team.md），记进任务记录，看板据此画进小队卡。
 // plan：从项目任务规划派发的追溯元数据（docs/tasks/TASK-006.md），由规划派发入口下发，写进任务记录。
-export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string } };
+export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string }; autopilotRole?: 'writer' | 'reviewer' };
 export async function launch(job: Job, cli: string) {
   const fd = await open(join(jobDir(job.id), 'supervisor.log'), 'a', 0o600);
   try {
@@ -74,6 +75,9 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   // 现成副本只能借用已登记的群副本，不能借这个入口扩大可写路径。
   const chat = options.chat ? await readChat(options.chat.id) : undefined;
   if (!!options.worktree !== !!chat) throw new Error('使用群副本时必须同时指定 worktree 和 chat。');
+  if (options.autopilotRole && (!options.autopilot || chat || options.worktree || options.team)) throw new Error('自治副本不能与其他共享副本混用。');
+  const shared = options.autopilotRole && options.autopilot
+    ? await sharedAutopilotWorktree(options.autopilot, options.autopilotRole, options.who, options.ro === true, project.name, base, network) : undefined;
   if (chat) {
     if (chosen.length !== 1) throw new Error('群共用副本一次只能派一位成员。');
     const expected = await worktreePath(project, `chat-${chat.id}`);
@@ -101,6 +105,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   const jobs: Job[] = [];
   await withLock(join(paths().cache, 'dispatch'), async () => {
     const running = (await listJobs(true)).filter(active);
+    if (shared && running.some(j => j.autopilot?.run === options.autopilot?.run || samePath(j.worktree, shared.worktree))) throw new Error('自治执行还有选手在动手，请等待本轮结束。');
     if (chat && running.some(j => j.chat?.id === chat.id)) throw new Error('群里还有成员在动手，请等这一轮结束。');
     if (running.length + chosen.length > max) throw new Error(`同时最多跑 ${max} 件（设置 → 选手与模型 → 派活限制），现在已有 ${running.length} 件在跑或排队，本次要派 ${chosen.length} 件。${temporaryMax < limits.maxRunning ? '环境变量 XAGENTS_MAX_RUNNING 临时收紧了上限。' : ''}请等待结束、停止任务或在设置里调整上限；环境变量只能收紧。`);
     const now = new Date(), batch = await reserveBatch(file, now);
@@ -108,13 +113,14 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
       for (const spec of chosen) {
         const id = await reserveJob(spec.who, file, now);
         const job: Job = { id, batch, ...spec, project: project.name, repo: project.repo, base,
-          worktree: chat?.worktree ?? await worktreePath(project, id), branch: chat?.branch ?? `xa/${id}`, mode: options.ro ? 'read-only' : 'workspace-write',
+          worktree: shared?.worktree ?? chat?.worktree ?? await worktreePath(project, id), branch: shared?.branch ?? chat?.branch ?? `xa/${id}`, mode: options.ro ? 'read-only' : 'workspace-write',
           ...(realCheck ? { realCheck: structuredClone(realCheck) } : {}),
           ...(network ? { network: true as const } : {}),
           ...(options.team ? { team: { ...options.team } } : {}),
           ...(options.chat ? { chat: { ...options.chat } } : {}),
           ...(options.plan ? { plan: { ...options.plan } } : {}),
           ...(options.autopilot ? { autopilot: { ...options.autopilot } } : {}),
+          ...(options.autopilotRole ? { autopilotRole: options.autopilotRole } : {}),
           kind, title, summary, state: 'queued', created: now.toISOString(), queuedBy: process.pid, queuedSince: processSince(process.pid) };
         await createJob(Object.assign(job, { quota_before: quota })); jobs.push(job);
       }
@@ -136,7 +142,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
       if (vendorOf(job.who) === 'deepseek' && !process.env.XAGENTS_FAKE_WORKER) await checkDeepseekLogin();
       // Cursor 的登录在钥匙串里、选手读不到，由看管进程启动前现取；没登录或快过期就不派。
       if (isolationOf(job.who) === 'cursor' && !process.env.XAGENTS_FAKE_WORKER) await checkCursorLogin();
-      if (!chat) {
+      if (!chat && !shared) {
         await addWorktree(job);
         await setup(job, project.setup, join(jobDir(job.id), 'setup.log'));
       }

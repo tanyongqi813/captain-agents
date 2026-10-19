@@ -32,7 +32,8 @@ const resumedSession = () => {
   return undefined;
 };
 // 先认审查：审查提示词会引用写手报告，写手报告里不再出现“你是审查”。
-const role = prompt.includes('你是审查') ? 'reviewer' : prompt.includes('你是搭档审改里的写手') || prompt.includes('请逐条处理上面的审查意见') ? 'writer' : 'plain';
+const flowRole = (JSON.parse(readFileSync(join(dir, 'job.json'), 'utf8')) as { autopilotRole?: string }).autopilotRole;
+const role = flowRole ?? (prompt.includes('你是审查') ? 'reviewer' : prompt.includes('你是搭档审改里的写手') || prompt.includes('请逐条处理上面的审查意见') ? 'writer' : 'plain');
 const reviewKind = () => {
   const raw = process.env.XA_TEST_REVIEW;
   if (!raw) return 'pass';
@@ -99,6 +100,8 @@ if (mode === 'hang' || mode === 'ignore-term') {
     const n = (existsSync(ticks) ? Number(readFileSync(ticks, 'utf8')) || 0 : 0) + 1;
     writeFileSync(ticks, String(n));
     writeFileSync(join(process.cwd(), 'writer-round.txt'), `第${n}轮\n`);
+    const node = flowRole === 'writer' ? /^子节点：([a-z][a-z0-9-]*)/m.exec(prompt)?.[1] : undefined;
+    if (node) writeFileSync(join(process.cwd(), `${node}.txt`), `子节点 ${node} 完成\n`);
   }
   const report = diagnosing ? autopilot!.diagnosis ?? '' : chatReport !== undefined ? (Array.isArray(chatReport) ? chatReport[Math.min(chatRound - 1, chatReport.length - 1)] : chatReport) : mode === 'real' ? '## 结论\n测试替身完成。\n## 真实环境检查步骤\n- 打开页面，看到任务列表\n* 切换深色，文字清楚\n1. 点击详情，显示说明\n## 其他\n- 不应收取\n' : mode === 'empty' ? '' : role === 'reviewer' ? reviewReport() : role === 'writer' ? writerReport(prompt) : '## 结论\n测试替身完成。\n<script>throw new Error("不能执行")</script>\n';
   const session = resumedSession() || randomUUID();

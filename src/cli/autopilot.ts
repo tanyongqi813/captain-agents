@@ -23,7 +23,7 @@ function progress(run: AutopilotRun): string {
   return `推进进程 ${run.pid}`;
 }
 
-export async function autopilotStart(options: { project: string; taskId: string; who: string[]; policy?: string; ro?: boolean }) {
+export async function autopilotStart(options: { project: string; taskId: string; who: string[]; policy?: string; ro?: boolean; reviewer?: string }) {
   const run = await startAutopilot(options);
   console.log(`无人看守：${run.id}`);
   console.log(`项目：${run.project}；任务：${run.taskId}（${run.spec}）`);

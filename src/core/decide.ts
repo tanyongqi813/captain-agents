@@ -5,6 +5,7 @@ import { markCommentsHandled } from './comments.ts';
 import { hasCode } from './fsx.ts';
 import { guardTeamJob } from './team.ts';
 import { adoptBlockedByVerify } from './verify.ts';
+import { guardAutopilotJob } from './autopilot.ts';
 
 export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
@@ -18,6 +19,8 @@ export async function decide(id: string, kind: 'adopt' | 'drop', note: string | 
   }
   const job = await readJob(id).catch(e => { if (hasCode(e, 'ENOENT')) throw new Error(`找不到任务 ${id}。请先运行 xagents status --all。`); throw e; });
   await guardTeamJob(job);
+  await guardAutopilotJob(job);
+  if (job.autopilotRole && kind === 'adopt' && !merged) throw new Error('自治节点使用共用副本，请检查整台执行的最终补丁并在外部合并后，再填写合并提交号记采用结论。');
   let commit: string | undefined;
   if (merged !== undefined) {
     if (by !== 'lead' || kind !== 'adopt') throw new Error('--merged 只能在负责人采用时用。');

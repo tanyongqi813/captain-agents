@@ -30,6 +30,9 @@ import type {
 } from './autopilot.ts';
 import { buildPacket, continueBody, evidenceFingerprint, parseDiagnosis, quotaSignal, redactText } from './autopilot-diagnosis.ts';
 import type { DiagnosisCause, DiagnosisEvidence, OwnerCode } from './autopilot-diagnosis.ts';
+import { activateFlowSplit, startFlowWriter, stepFlowReview, stepFlowVerify } from './autopilot-flow.ts';
+import type { FlowDeps } from './autopilot-flow.ts';
+import { assertAutopilotWorktree, captureAutopilotPatch } from './autopilot-worktree.ts';
 
 // 无人看守的确定性推进器（docs/tasks/TASK-009.md、docs/tasks/TASK-010.md）。它是隔离外的后台进程（autopilot-entry.ts），
 // 每走一步都是同一个形状：在锁里核对状态与动作令牌 → 记下"要做什么"（意图）→ 再动手做外部工作 → 回来落盘结果。
@@ -74,6 +77,7 @@ export type DiagnosisSettled =
   | { state: 'failed'; kind: 'quota' | 'timeout' | 'crashed' };
 
 export type AutopilotDeps = {
+  flow?: FlowDeps;
   // 真正出去干活的那一步。生产是规划派发；测试替身自己记账也自己回话。
   start?: (intent: StartIntent) => Promise<{ jobs: string[] }>;
   // 外部动作留下的证据：崩溃后靠它认领，绝不重复派活。
@@ -124,7 +128,16 @@ async function abortStarted(ids: string[]) {
 // 令牌在真正叫醒之后才写进任务记录：只预留、没叫醒时记录里还是上一轮的令牌，
 // 崩溃恢复不会把旧一轮的结果认成新一轮（评审第 5 条）。
 const startByDispatch: NonNullable<AutopilotDeps['start']> = async intent => {
+  const run = await readAutopilot(intent.run);
+  if (run.flow && intent.mode !== 'continue') return { jobs: await startFlowWriter(run, run.action!) };
   if (intent.mode === 'continue') {
+    if (run.flow) {
+      const target = await assertAutopilotWorktree(run, 'writer');
+      for (const id of intent.previous ?? []) {
+        const job = await readJob(id);
+        if (job.autopilot?.run !== run.id || job.autopilotRole !== 'writer' || job.worktree !== target.worktree) throw new Error('续接来源不是本台执行的写手副本。');
+      }
+    }
     const rounds = (intent.rounds ?? []).filter(item =>
       typeof item?.job === 'string' && item.job.length > 0 && Number.isInteger(item.round) && item.round >= 2);
     if (!rounds.length) throw new Error('上一轮没有可续接的任务记录，不能补做。请主人接手。');
@@ -228,7 +241,12 @@ const changesIn = async (jobs: string[]): Promise<number | null> => {
     try { job = await readJob(id); }
     catch (error) { if (hasCode(error, 'ENOENT')) return null; throw error; }
     if (!job.worktree || job.worktreeRemoved) return null;
-    try { total += await changedFiles(job); }
+    try {
+      if (job.autopilotRole === 'writer' && job.autopilot) {
+        const run = await readAutopilot(job.autopilot.run);
+        total += await captureAutopilotPatch(run, 'writer') === run.flow?.accepted ? 0 : await changedFiles(job);
+      } else total += await changedFiles(job);
+    }
     catch { return null; }
   }
   return total;
@@ -407,6 +425,7 @@ const allJobs = (run: AutopilotRun): string[] => [...new Set([
   ...(run.action?.jobs ?? []),
   ...run.attempts.flatMap(item => item.jobs ?? []),
   ...diagnosesOf(run).flatMap(item => item.jobs ?? []),
+  ...(run.flow?.reviews.flatMap(item => item.jobs ?? []) ?? []),
 ])];
 
 // 走一步。返回值：ended 已经停下、waiting 在等外部工作、acted 刚做完一步、idle 没活可干。
@@ -417,18 +436,26 @@ export async function stepAutopilot(id: string, deps: AutopilotDeps = {}): Promi
   const first = await readAutopilot(id);
   if (isEndedState(first.state)) return 'ended';
   return withLock(actionLockDir(id), async () => {
-    const run = await readAutopilot(id);          // 权威状态：锁内重读，不信锁外看到的
+    let run = await readAutopilot(id);          // 权威状态：锁内重读，不信锁外看到的
+    if (run.flow && run.state === 'recovering' && !run.action) {
+      run = await updateAutopilot(id, current => {
+        current.state = current.nextPrompt ? 'executing' : current.flow!.candidate ? 'reviewing' : current.nodes.every(n => n.state === 'passed') ? 'verifying' : 'executing';
+        delete current.reason;
+      });
+    }
     if (isEndedState(run.state)) return 'ended';  // 停下/预算收尾之后，过期动作一个字都不能再动
     const limit = exceededBudget(run);
     // 已经预占的动作要让它走完：尝试次数正好用尽时，最后那一枪已经算进预算里了，卡在这里会把它的结果白丢一次。
     // 下一次进来没有待确认动作，就在上面这行收尾——"最后一次已预占"和"不许再开新的"是两件事（评审第 2 条）。
-    if (limit && !(limit === 'attempts' && run.action)) return exhaust(id, limit, deps);
+    if (limit && !(limit === 'attempts' && (run.action || run.flow && run.state === 'verifying'))) return exhaust(id, limit, deps);
     if (run.action) {
+      if (run.flow && run.action.phase === 'review') return stepFlowReview(id, depsOf(deps), deps.flow);
       // 待确认的动作分两种：写手在干，或负责人 AI 在诊断。两者的认领方式一样，收尾方式不同。
       return run.action.phase === 'diagnose' ? recoverDiagnosis(id, deps) : recover(id, deps);
     }
     if (run.state === 'diagnosing') return diagnose(id, deps);
-    if (run.state === 'verifying') return endVerify(id);
+    if (run.flow && run.state === 'reviewing') return stepFlowReview(id, depsOf(deps), deps.flow);
+    if (run.state === 'verifying') return run.flow ? stepFlowVerify(id, deps.flow) : endVerify(id);
     return takeAction(id, deps);
   }, ACTION_LOCK_WAIT_MS);
 }
@@ -456,7 +483,8 @@ async function takeAction(id: string, deps: AutopilotDeps): Promise<'acted' | 'i
   const holder: { action?: AutopilotAction } = {};
   const written = await updateAutopilot(id, run => {
     if (isEndedState(run.state) || run.action) return;
-    const node = run.nodes.find(item => item.state === 'pending' || item.state === 'running' || item.state === 'failed');
+    const node = run.nodes.find(item => (item.state === 'pending' || item.state === 'running' || item.state === 'failed')
+      && (!item.task || item.task.deps.every(dep => run.nodes.some(n => n.id === dep && n.state === 'passed'))));
     if (!node) {
       // 所有节点都已有结论，却没有新的事能做：交给主人，不许原地空转。
       advance(run, { kind: 'blocked', note: `没有可继续的节点了（${run.nodes.map(item => `${item.id} ${item.state}`).join('、')}），请主人接手。` });
@@ -659,12 +687,27 @@ function recordUsage(run: AutopilotRun, action: AutopilotAction, usage: { read: 
 // 失败不再自己重试：先转 diagnosing，由只读负责人诊断（TASK-010）决定续做、重试、转验收、细拆还是交给主人。
 async function settle(id: string, action: AutopilotAction, jobs: string[], outcome: 'done' | 'failed', deps: AutopilotDeps): Promise<void> {
   const usage = await depsOf(deps).usage(jobs).catch(() => undefined);
+  const before = await readAutopilot(id);
+  let candidate: string | undefined;
+  if (before.flow) {
+    try { candidate = await (deps.flow?.capture ?? captureAutopilotPatch)(before, 'writer'); }
+    catch {
+      await updateAutopilot(id, run => {
+        if (run.action?.token !== action.token) return;
+        const attempt = run.attempts.find(a => a.token === action.token);
+        if (attempt) { attempt.outcome = 'blocked'; attempt.jobs = jobs; }
+        recordUsage(run, action, usage);
+        advance(run, { kind: 'owner', code: 'owner_requested', note: '写手成果或补丁快照无法核对，原成果保留。' });
+      });
+      return;
+    }
+  }
   await updateAutopilot(id, run => {
     if (run.action?.token !== action.token) return;
     const attempt: AutopilotAttempt | undefined = run.attempts.find(item => item.token === action.token);
-    if (attempt) { attempt.outcome = outcome; attempt.jobs = jobs; }
+    if (attempt) { attempt.outcome = outcome; attempt.jobs = jobs; if (candidate) attempt.patch = candidate; }
     const node = run.nodes.find(item => item.id === action.node);
-    if (node) node.state = outcome === 'done' ? 'passed' : 'failed';
+    if (node) node.state = outcome === 'done' ? (run.flow ? 'running' : 'passed') : 'failed';
     recordUsage(run, action, usage);
     delete run.action;
     // 等恢复的登记（推进器中途没了）：先把状态接回"在干"，再把这一次的结果记账，否则转移会被状态机拒掉。
@@ -672,6 +715,7 @@ async function settle(id: string, action: AutopilotAction, jobs: string[], outco
     if (outcome === 'done') {
       // 骨架：这一步做完了，但自动审查与验收还没接（TASK-009/TASK-011 的范围之外），结果交给主人。
       if (!advance(run, { kind: 'done' })) return;
+      if (run.flow && candidate) { run.flow.candidate = { hash: candidate, node: action.node, jobs }; return; }
       advance(run, { kind: 'blocked', note: `无人看守这一版还没有自动审查和验收，${action.node} 的这次执行结果请主人接手看。` });
       return;
     }
@@ -745,7 +789,7 @@ async function dispatchDiagnosis(id: string, action: AutopilotAction, deps: Auto
     if (evidence.unacceptedChanges === null) delete entry.changes;
     else entry.changes = evidence.unacceptedChanges;
   });
-  const who = diagnosisChoice(run);
+  const who = run.flow?.reviewer ?? diagnosisChoice(run);
   let started: { jobs: string[] } | { refused: DiagnosisRefusal };
   try {
     started = await runner.startDiagnosis({
@@ -930,6 +974,10 @@ async function settleDiagnosis(
           at: new Date().toISOString(), source: redactText(reply.reason, 200),
           nodes: reply.nodes.map(item => ({ ...item, deps: [...item.deps] })),
         };
+        if (run.flow) {
+          if (!activateFlowSplit(run, node.id, reply.nodes)) reject('recovery_budget', '细拆深度、节点编号或剩余预算不满足约束');
+          return;
+        }
         advance(run, { kind: 'owner', code: 'split_pending' });
         return;
       }
@@ -974,6 +1022,7 @@ export async function runAutopilot(id: string, deps: AutopilotDeps = {}): Promis
     }
     let previous = clock();
     while (!stopping) {
+      const elapsedBefore = (await readAutopilot(id)).elapsedSeconds;
       const result = await stepAutopilot(id, deps);
       if (result === 'ended') return;
       const now = clock();
@@ -981,8 +1030,8 @@ export async function runAutopilot(id: string, deps: AutopilotDeps = {}): Promis
       const gapMs = now - previous;
       await updateAutopilot(id, run => {
         if (!isActiveState(run.state)) return;
-        if (gapMs > SLEEP_GAP_MS) run.sleeps += gapMs / 1000;
-        else run.elapsedSeconds += Math.max(0, gapMs) / 1000;
+        if (gapMs > SLEEP_GAP_MS && !run.flow) run.sleeps += gapMs / 1000;
+        else run.elapsedSeconds += Math.max(0, gapMs / 1000 - Math.max(0, run.elapsedSeconds - elapsedBefore));
       });
       previous = now;
       // 等外部工作、或者没活可干，都歇一轮再走，绝不热循环。

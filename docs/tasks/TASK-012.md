@@ -1,6 +1,6 @@
 # TASK-012：无人看守控制台与恢复证据展示
 
-- 状态：`DRAFT`
+- 状态：`READY`
 - 优先级：`P2`
 - 难度等级：`Medium`
 - 前置任务：`TASK-011`、`TASK-013` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`

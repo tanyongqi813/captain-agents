@@ -13,6 +13,7 @@ import type { Job } from './job.ts';
 import { singleLine } from './text.ts';
 import { loadProject } from './project.ts';
 import { guardTeamJob } from './team.ts';
+import { guardAutopilotJob } from './autopilot.ts';
 
 export type Execution = { exit: number | null; output: string; timedOut: boolean; signal?: string; error?: string };
 export type Executor = (file: string, args: string[], cwd: string, timeoutMs: number, onData?: (text: string) => void, env?: NodeJS.ProcessEnv) => Promise<Execution>;
@@ -92,9 +93,13 @@ export function adoptBlockedByVerify(job: Job): string | null {
   return `这件活能改文件，采用前要先验收：xagents verify ${job.id}。确实不用验（比如没改文件、只改了文档），用 ${skip} 写明。`;
 }
 // 沿用带死锁回收的登记锁，但排队不受它的 10 秒上限影响。
-export async function withVerifyLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
+export async function withVerifyLock<T>(repo: string, fn: () => Promise<T>, waitMs?: number): Promise<T> {
   const key = createHash('sha256').update(await realpath(repo)).digest('hex');
   const dir = join(paths().cache, 'verify-project', key);
+  if (waitMs !== undefined) {
+    if (!Number.isFinite(waitMs) || waitMs <= 0 || waitMs > 2_147_483_647) throw new Error('验收排队时限无效。');
+    return withLock(dir, fn, waitMs);
+  }
   while (true) {
     let acquired = false;
     try { return await withLock(dir, () => { acquired = true; return fn(); }); }
@@ -143,6 +148,7 @@ export async function verifyCommands(commands: string[], cwd: string, logfile: s
 }
 export async function verify(id: string, run: Executor = execute): Promise<Verification> {
   const original = await readJob(id);
+  await guardAutopilotJob(original);
   await guardTeamJob(original);
   return withVerifyLock(original.repo, async () => {
     const job = await readJob(id);
