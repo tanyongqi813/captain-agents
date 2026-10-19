@@ -225,7 +225,9 @@ test('失败和被停止的任务也在结束状态同次落盘保存缓存快�
   await writeFile(join(c.home, 'cache/quota.json'), JSON.stringify(data));
   for (const mode of ['fail', 'hang']) {
     const previous = new Set((await c.jobs()).map(j => j.id));
-    const started = await c.cli(['run', c.task, '--summary', '完成本次测试任务', '--who', 'codex:high'], { XA_TEST_MODE: mode });
+    // 账户来源探针也走固定替身，保持与 snapshot 同一账户；不能把“来源未知”
+    // 误当成应该原样保留的有效 Kimi 快照。
+    const started = await c.cli(['run', c.task, '--summary', '完成本次测试任务', '--who', 'codex:high'], { XA_TEST_MODE: mode, XAGENTS_QUERY_EXEC: join(fixtures, 'query.ts') });
     assert.equal(started.code, 0, started.stderr);
     const job = (await c.jobs()).find(j => !previous.has(j.id))!;
     if (mode === 'hang') {
