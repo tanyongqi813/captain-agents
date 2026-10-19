@@ -288,6 +288,7 @@ export async function ensureQuota(options: QuotaOptions = {}) {
       // 首次启用 Kimi 而来源查询失败时也补一条明确未知，避免因为缺这条缓存
       // 重查所有厂家、把其他家仍有效的停派证据覆盖成查询失败。
       cached.providers = cached.providers.filter(p => p.icon !== 'kimi'); cached.providers.push(entry);
+      await writeJson(join(paths().cache, 'quota.json'), cached);
     }
   }
   const age = cached ? now.getTime() - Date.parse(cached.queriedAt) : Infinity;

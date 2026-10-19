@@ -243,6 +243,9 @@ test('旧缓存缺少Kimi且来源查询失败：只补未知项，不刷新或�
     execute: async cmd => { calls++; assert.equal(cmd.args[0], 'provider'); throw new Error('fixture unavailable'); } });
   assert.equal(calls, 1); assert.deepEqual(result.providers.find(p => p.icon === 'codex'), codex);
   assert.ok(result.providers.find(p => p.icon === 'kimi')?.error);
+  const persisted = await readQuotaCache({ custom: false });
+  assert.deepEqual(persisted?.providers.find(p => p.icon === 'codex'), codex);
+  assert.ok(persisted?.providers.find(p => p.icon === 'kimi')?.error, '未知项也要落盘，供只读看板显示');
   assert.throws(() => checkQuota(result, [{ who: 'codex' }]), /95%/);
 });
 
