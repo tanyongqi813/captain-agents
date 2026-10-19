@@ -119,3 +119,10 @@ test('台账或项目后来被移除仍能查看旧自治求助证据', () => {
   expect(screen.getByRole('dialog').textContent).toContain('需要主人处理');
   expect(screen.queryByRole('button', { name: /^无人看守$/ })).toBeNull();
 });
+
+test('未启用新版审查闭环的旧自治记录仍在看板显示求助', async () => {
+  const view = fixtureView(); view.autopilots = [run({ managed: false, state: 'needs_owner', active: false, reviewer: null, reason: '旧执行需要主人接手。' })];
+  window.xa = fixtureBridge({ getView: vi.fn(async () => view) }); render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: /TASK-001 等主人 无人看守详情/ }));
+  expect((await screen.findByRole('dialog')).textContent).toContain('旧执行需要主人接手');
+});

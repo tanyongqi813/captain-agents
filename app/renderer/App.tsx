@@ -165,7 +165,7 @@ export function App() {
     tag = (job: { project: string }) => several ? projectLabel(view, projectOf(job)) : undefined;
   const entryHue = (e: Entry) => hue(e.target.kind === 'job' ? e.members[0].batch : e.target.id);
   const shown = target ? normalizeTarget(view, target) : null;
-  const automatic = (view.autopilots ?? []).filter(r => r.managed), autoRunning = automatic.filter(r => r.active), autoOwner = automatic.filter(r => r.state === 'needs_owner');
+  const automatic = view.autopilots ?? [], autoRunning = automatic.filter(r => r.managed && r.active), autoOwner = automatic.filter(r => r.state === 'needs_owner');
   const showAutopilot = (id: string) => { setAutopilotFocus(id); go('plan'); };
   return <><div className="app" inert={target || settings ? true : undefined}><TopBar view={view} page={position.page} go={go} openSettings={() => { setTarget(null); setSettings(true); }} />{error && <div role="alert">读取登记处失败，显示上次读取的内容。</div>}<main className="main">{notice && <p role="alert" className="notice notice-bad">{notice}</p>}
     {position.page === 'board' ? <div id="v-board">
