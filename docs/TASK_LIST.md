@@ -27,6 +27,9 @@
 | [TASK-021](tasks/TASK-021.md) | DeepSeek/Kimi 上下文节流适配 | PASSED | P1 | Medium | TASK-020 PASSED |
 | [TASK-022](tasks/TASK-022.md) | 负责人提示词与执行胶囊解耦 | PASSED | P1 | Low | TASK-020、TASK-021 PASSED |
 | [TASK-023](tasks/TASK-023.md) | 负责人切换与诊断角色澄清 | PASSED | P1 | Medium | TASK-022 PASSED |
+| [TASK-024](tasks/TASK-024.md) | 规划共享契约与安全迁移校对 | READY | P1 | High | TASK-023 PASSED |
+| [TASK-025](tasks/TASK-025.md) | 直接消费执行胶囊派活 | DRAFT | P1 | High | TASK-024 PASSED |
+| [TASK-026](tasks/TASK-026.md) | 多项目授权队列自动领取 | DRAFT | P1 | High | TASK-025 PASSED |
 
 ## 当前阶段
 
@@ -39,3 +42,4 @@
 - 群聊能力：主人已按 ADR-002 接受 Cursor 续接轮使用共享锁目录的有限风险；权限已收窄到 macOS Cursor 群聊续接轮并通过复审，真实窗口冒烟仍作为通过注记保留。
 - Kimi 额度：TASK-019 已通过并整合；多窗口触顶、失败缓存、金额与统计口径已修正。集成补查修正了缺 Kimi 缓存时误刷新其他厂家停派依据的问题；账户来源未知单独落盘，其他家的有效事实保持不变。最终集成验收见 TASK-014 报告。
 - 执行节流链：TASK-020 把精确锚点、可修改文件、修改上限、执行者验证和已知基线从 Task Spec 受限提取为短执行胶囊；TASK-021 按 roster 的 vendor 事实为 DeepSeek/Kimi 附加上下文节流提示；TASK-022 把负责人长期规划提示与选手本轮合同明确解耦。执行者只做定向验证，负责人在整合后做一次全量验收；平台不执行 Task Spec 里的命令。
+- 自动领取链：TASK-024 先与 Architect PM Handoff 统一版本化契约并提供只读诊断、dry-run、原子迁移和语义对账；TASK-025 再让派活正文直接读取当前 Execution Capsule，模型适配保持为平台外层；TASK-026 最后增加主人显式授权、有限并发、跨项目的 READY 队列领取，不因打开应用擅自启动 backlog。
