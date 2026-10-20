@@ -1,7 +1,9 @@
 # TASK-018：设置成本资料与额度未知时的预算
 
-- 状态：`READY`
-- 优先级：`P2`
+- 状态：`CHANGES_REQUESTED`
+- 优先级：`P1`
+- 当前评审：`docs/reviews/TASK-018/attempt-05.md`
+- 下一轮：`docs/execution/TASK-018/attempt-06.md`（F-08/F-09；F-01/F-03/F-04/F-06 已解决）
 - 难度等级：`High`
 - 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
 - 需求来源：无法正常查询额度或使用中转站时，主人需要提供有效的计价依据与本地消耗上限。

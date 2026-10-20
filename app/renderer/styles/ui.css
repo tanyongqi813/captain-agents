@@ -27,6 +27,7 @@ button.plain { border: 0; background: transparent; padding: 0; text-align: inher
 /* Windows 上的 Codex 图标只有图形、没有底板：垫白底留边，和别家的方块一样大（ui-spec 的 WorkerIcon） */
 :root[data-platform="windows"] .logo img[data-icon="codex"] { transform: none; box-sizing: border-box; padding: 16%; background: var(--icon-plate); box-shadow: 0 0 0 1px var(--icon-plate-ring); }
 .logo .mono-mark { display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--on-brand); background: var(--brand-other); }
+.logo .mono-mark[data-letter]::before { content: attr(data-letter); }
 .mono-mark[data-brand="codex"] { background: var(--brand-codex); } .mono-mark[data-brand="grok"] { background: var(--brand-grok); }
 .mono-mark[data-brand="cursor"] { background: var(--brand-cursor); } .mono-mark[data-brand="claude"] { background: var(--brand-claude); }
 .mono-mark[data-brand="kimi"] { background: var(--brand-kimi); }

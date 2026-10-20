@@ -9,7 +9,7 @@ import { toolRoot } from './paths.ts';
 import { hasCode } from './fsx.ts';
 import { active, listJobs } from './job.ts';
 import type { Job } from './job.ts';
-import { whos, spec, keptWhos } from './roster.ts';
+import { whos, spec, keptWhos, isolationOf } from './roster.ts';
 import type { Who } from './roster.ts';
 import { effortNames } from './policy.ts';
 import { readSettings } from './settings.ts';
@@ -21,6 +21,9 @@ import { profiles } from './profiles.ts';
 import type { Profile } from './profiles.ts';
 import { verifyState } from './verify.ts';
 import { deepseekOffPeak } from './deepseek-settings.ts';
+import { readCostSettings, emptyCostSettings } from './cost-settings.ts';
+import { dispatchAdvice, formatDispatchAdvice, samplesFromJobs, budgetsFromSettings } from './dispatch-advice.ts';
+import { listAutopilots } from './autopilot.ts';
 
 // 手册随仓库放在 guide/commander.md；找不到时用人话说清楚放哪、怎么办。
 export async function readGuide(root = toolRoot): Promise<string> {
@@ -120,6 +123,28 @@ function forgotten(live: Job[], now = Date.now()) {
     ...(stale.length > 10 ? [`- 另有 ${stale.length - 10} 件，用 \`xagents status --all\` 看`] : [])];
 }
 
+async function adviceSection(jobs: Job[], workers: Settings['workers'], quotaStop: Settings['limits']['quotaStop'], listed: Listed) {
+  const endpoint = await codexEndpoint();
+  const quota = await readQuotaCache(endpoint);
+  const settings = await readCostSettings().catch(() => emptyCostSettings());
+  const autopilots = await listAutopilots().catch(() => ({ runs: [], broken: [] as string[] }));
+  const now = new Date().toISOString();
+  const gathered = samplesFromJobs(jobs, settings, now, autopilots.runs);
+  const unavailable = listed.flatMap(item => item.reason
+    ? keptWhos.filter(who => isolationOf(who) === item.icon).map(who => ({ who, reason: item.reason! }))
+    : []);
+  const remarks = [...gathered.notes];
+  if (autopilots.broken.length) remarks.push('有无人看守登记读不出来，相关成本不能当成完整');
+  const advice = dispatchAdvice({
+    now, kind: '实现', quotaStop, quota, workers, jobs,
+    samples: gathered.samples, remarks, experiences: settings.experiences,
+    budgets: budgetsFromSettings(settings, now), unavailable,
+  });
+  // 手册的机器摘要只展示这台机器现在真能选择的选手；没安装或平台未开放的原因统一留在末尾，
+  // 避免“主人允许的选手”已经过滤、派活参考又把它们列回来造成误解。
+  advice.candidates = advice.candidates.filter(item => listedWho(listed, item.who));
+  return formatDispatchAdvice(advice);
+}
 async function connectionLine() {
   try {
     const statuses = await connectStatus();
@@ -135,5 +160,7 @@ export async function guideAppendix(options: ListedOptions = {}): Promise<string
   return ['## 这台机器现在的情况', '', await connectionLine(), '',
     `派活限制：同时最多 ${limits.maxRunning} 件；${limits.quotaStop === null ? '额度不设停派线（主人在设置里关掉了）' : `额度用到 ${limits.quotaStop}% 停派`}（设置 → 选手与模型）`, '',
     ...(archivedProjects.length ? [`已归档项目：${archivedProjects.join('、')}。`, ''] : []),
-    workersSection(workers, listed, deepseek), '', await quotaSection(limits.quotaStop, listed), '', profilesSection(jobs, listed), '', jobsSection(jobs, limits.maxRunning), ...(unlistedLine(listed) ? ['', unlistedLine(listed)] : [])].join('\n') + '\n';
+    workersSection(workers, listed, deepseek), '', await quotaSection(limits.quotaStop, listed), '', profilesSection(jobs, listed), '', jobsSection(jobs, limits.maxRunning), '',
+    await adviceSection(jobs, workers, limits.quotaStop, listed),
+    ...(unlistedLine(listed) ? ['', unlistedLine(listed)] : [])].join('\n') + '\n';
 }

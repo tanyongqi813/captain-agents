@@ -922,7 +922,7 @@ test('诊断说 owner：原因码和它的理由都记下来，给主人的仍�
   const after = await readAutopilot(run.id);
   assert.equal(after.state, 'needs_owner');
   assert.equal(after.ownerCode, 'owner_requested');
-  assert.match(String(after.reason), /负责人 AI 判断这件事不能自动处理/);
+  assert.match(String(after.reason), /自动故障诊断判断这件事不能自动处理/);
   assert.match(String(after.reason), /要读主人的登录文件才能继续/);
   assert.equal(after.ownerNote, '要读主人的登录文件才能继续');
 });
@@ -1023,7 +1023,7 @@ test('请诊断被别的检查拦下（不是额度）：照样有界结束，�
   assert.equal(await stepAutopilot(run.id, w.deps), 'ended');
   const after = await readAutopilot(run.id);
   assert.equal(after.state, 'needs_owner');
-  assert.match(String(after.reason), /没能请负责人 AI 诊断：隔离自检没过/);
+  assert.match(String(after.reason), /没能派出只读故障诊断：隔离自检没过/);
   assert.equal(w.diagStarts.length, 0);
 });
 

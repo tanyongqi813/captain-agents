@@ -151,7 +151,7 @@ function Side({ id, chat, view, open }: { id: string; chat: ViewChat; view: View
   return <aside className="chat-side" id={id} aria-label="群信息">
     <h3>成员</h3>
     <ul className="chat-members">
-      <li><WorkerIcon name="claude" size="sm" /><span className="ellip"><b>负责人</b> <span className="faint">群主</span></span></li>
+      <li><LeadIcon /><span className="ellip"><b>负责人</b> <span className="faint">群主 · 当前会话</span></span></li>
       {chat.members.map(m => {
         const w = view.workers[m.who], job = m.job ? view.jobs.find(j => j.id === m.job) : undefined;
         return <li key={m.who}>
@@ -175,11 +175,14 @@ function Side({ id, chat, view, open }: { id: string; chat: ViewChat; view: View
 }
 // 顶栏的成员按钮：一小排成员小图标 + 人数（负责人算一位），任何宽度都看得到群里有谁；它也是成员栏的开关。
 const PEOPLE_ICONS = 4;
+function LeadIcon() {
+  return <span className="logo logo-sm" role="img" aria-label="负责人（当前会话）"><span className="mono-mark" data-brand="other" data-letter="主" /></span>;
+}
 function People({ chat, view, expanded, toggle, controls }: { chat: ViewChat; view: View; expanded: boolean; toggle: () => void; controls: string }) {
-  const icons = [{ key: 'lead', icon: 'claude', badge: undefined as string | undefined }, ...chat.members.map(m => ({ key: m.who as string, icon: view.workers[m.who].icon, badge: view.workers[m.who].badge }))];
+  const icons = [{ key: 'lead', icon: null, badge: undefined as string | undefined }, ...chat.members.map(m => ({ key: m.who as string, icon: view.workers[m.who].icon, badge: view.workers[m.who].badge }))];
   const names = ['负责人', ...chat.members.map(m => handleOf(m.who) + (m.readOnly ? '（只读）' : ''))], more = icons.length - PEOPLE_ICONS;
   return <button type="button" className="chat-people" aria-label={`成员 ${icons.length} 位`} aria-expanded={expanded} aria-controls={controls} title={names.join('、')} onClick={toggle}>
-    <span className="chat-people-icons" aria-hidden="true">{icons.slice(0, PEOPLE_ICONS).map(i => <WorkerIcon key={i.key} name={i.icon} badge={i.badge} size="sm" />)}{more > 0 && <span className="chat-people-more">+{more}</span>}</span>
+    <span className="chat-people-icons" aria-hidden="true">{icons.slice(0, PEOPLE_ICONS).map(i => i.icon ? <WorkerIcon key={i.key} name={i.icon} badge={i.badge} size="sm" /> : <LeadIcon key={i.key} />)}{more > 0 && <span className="chat-people-more">+{more}</span>}</span>
     <span>{icons.length} 位</span>
   </button>;
 }

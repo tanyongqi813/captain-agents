@@ -62,7 +62,7 @@ export function FeishuSettings() {
       <SettingRow group title="测试连接" note={status?.lastTest ? <span role="status">{status.lastTest.ok ? '测试通知已送达' : `测试未送达：${status.lastTest.error ?? '请检查连接。'}`} · {fmtTime(status.lastTest.at, true)}</span> : '固定测试消息，不调用 AI，也不产生求助事件。'}><Button size="sm" disabled={busy || !status?.connected} onClick={() => void act('test')}>{busy ? '正在处理…' : '发送测试通知'}</Button></SettingRow>
       {status?.connected && <SettingRow group title="断开连接" note="保留任务、历史与待发通知。"><Button size="sm" disabled={busy} onClick={() => setConfirm(true)}>断开连接</Button></SettingRow>}
     </SettingGroup>
-    <p className="sub">需要工作台在线、网络可用才会送达；电脑离线时先保留事件。飞书通知不受选手联网开关控制，也不依赖负责人 AI 的额度。</p>
+    <p className="sub">需要工作台在线、网络可用才会送达；电脑离线时先保留事件。飞书通知不受选手联网开关控制，也不依赖任何 AI 的额度。</p>
     {status?.issue && <p role="alert" className="notice notice-warn">{status.issue}</p>}
     {status?.deliveryIssue && <p role="status" className="notice notice-warn">{status.deliveryIssue}</p>}
     {error && <p role="alert" className="notice notice-bad">{error}</p>}

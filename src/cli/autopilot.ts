@@ -5,7 +5,7 @@ import { alive } from '../core/fsx.ts';
 import { localTime, table } from './format.ts';
 
 // 无人看守的命令行骨架（docs/tasks/TASK-009.md）。这一版只做启动、看状态、列出来、停止四件事。
-// 失败之后会请只读负责人 AI 诊断（docs/tasks/TASK-010.md），但当前状态、停在哪、为什么停都写在 reason 里，
+// 失败之后会派一位只读故障诊断 AI（docs/tasks/TASK-010.md），但当前状态、停在哪、为什么停都写在 reason 里，
 // 所以这里不用多一个参数：自动审查、验收、细拆的执行和桌面界面都还是后续任务的事。
 
 function stateText(run: AutopilotRun): string {

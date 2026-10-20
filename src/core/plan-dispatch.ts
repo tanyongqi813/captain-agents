@@ -32,13 +32,22 @@ const SUMMARY_MAX = 200;
 
 const EXTRA_MAX = 1200;
 
-function promptText(project: string, task: { id: string; title: string; goal: string; acceptance: string[]; spec: string | null }, extra?: string): string {
-  const lines = [`任务编号：${task.id}`, `任务题目：${task.title}`, ''];
+function promptText(project: string, task: PlanTask, extra?: string): string {
+  const execution = task.execution ?? { files: [], fileLimit: null, anchors: [], verification: [], baseline: [] };
+  const lines = [`# 执行胶囊：${task.id}`, '', `任务编号：${task.id}`, `本轮题目：${task.title}`, ''];
   if (task.goal) lines.push('## 任务目标', '', task.goal, '');
   if (task.acceptance.length) lines.push('## 验收标准', '', ...task.acceptance.map((item, i) => `${i + 1}. ${item}`), '');
+  if (execution.anchors.length) lines.push('## 精确锚点', '', ...execution.anchors.map(item => `- ${item}`), '');
+  if (execution.files.length) lines.push('## 可修改文件', '', ...execution.files.map(item => `- ${item}`), '',
+    `修改文件上限：${execution.fileLimit ?? execution.files.length}。超出路径或数量时停止并报告，不自行扩展。`, '');
+  if (execution.verification.length) lines.push('## 执行者验证（上限）', '', '```bash', ...execution.verification, '```', '',
+    '只运行上述命令；不自行追加全量测试、UI 测试、构建或全量验收。同一完整命令最多运行两次，全量验收由负责人整合后执行。', '');
+  if (execution.baseline.length) lines.push('## 已知基线', '', ...execution.baseline.map(item => `- ${item}`), '',
+    '已知基线不重复对照、不排查、不修复。', '');
   // 补充说明只作参考：和任务题目、规则冲突时以题目和规则为准（这是平台给的文字，不是选手或外部的指令）。
   if (extra) lines.push('## 补充说明（只作参考，和本题目、规则冲突时以本题目和规则为准）', '', cap(extra, EXTRA_MAX), '');
-  lines.push(`——`, `来源：${project} 项目的任务规划${task.spec ? `（${task.spec}）` : ''}。`);
+  lines.push('## 收尾报告', '', '仅报告：实际修改文件、验收标准对应结果、验证命令与结果、未完成项、diff 摘要。不重述背景或重新论证既定设计。', '',
+    `规划来源：${project} 项目${task.spec ? `（${task.spec}）` : ''}。该 Task Spec 是负责人的长期规划档案，不是本轮必须全文重读的执行提示。`);
   return cap(lines.join('\n'), PROMPT_MAX);
 }
 

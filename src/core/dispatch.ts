@@ -12,7 +12,7 @@ import { findProject, projectBudget, worktreePath } from './project.ts';
 import { uncommitted } from './project-check.ts';
 import { git, addWorktree, setup } from './worktree.ts';
 import { reserveJob, reserveBatch } from './ids.ts';
-import { prompt } from './prompt.ts';
+import { prompt, workerPrompt } from './prompt.ts';
 import { selection, srtPath, refreshGrokLogin, checkDeepseekLogin, checkCursorLogin } from './workers.ts';
 import { prepareRun, usePreparedRun } from './run-package.ts';
 import { reconcileSafely } from './runner.ts';
@@ -94,7 +94,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
       if (!member || member.readOnly && !options.ro) throw new Error('只能派本群成员，只读成员必须使用只读隔离。');
     }
   }
-  const text = await prompt(project, resolve(file), network);
+  const baseText = await prompt(project, resolve(file), network);
   const title = options.title || basename(file, extname(file));
   const quota = await ensureQuota();
   checkQuota(quota, chosen, options.force, limits.quotaStop);
@@ -147,6 +147,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
         await setup(job, project.setup, join(jobDir(job.id), 'setup.log'));
       }
       if ((await readJob(job.id)).state !== 'queued') continue;
+      const text = workerPrompt(baseText, job.who);
       await writeAtomic(join(jobDir(job.id), 'prompt.md'), text);
       let cli: string | undefined;
       await updateJob(job.id, async current => {

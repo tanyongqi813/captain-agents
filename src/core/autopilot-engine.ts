@@ -346,7 +346,7 @@ export function diagnosisChoice(run: Pick<AutopilotRun, 'who'>): string {
   const usable = run.who.filter(item => { try { selection(item); return true; } catch { return false; } });
   const list = usable.length ? usable : run.who;
   const first = list[0];
-  if (!first) throw new Error('这台无人看守没有可用的选手，不能请负责人 AI 诊断。');
+  if (!first) throw new Error('这台无人看守没有可用的选手，不能派只读故障诊断。');
   const family = isolationOf(selection(first).who);
   const model = spec(selection(first).who).model;
   return list.find(item => isolationOf(selection(item).who) !== family)
@@ -450,7 +450,7 @@ export async function stepAutopilot(id: string, deps: AutopilotDeps = {}): Promi
     if (limit && !(limit === 'attempts' && (run.action || run.flow && run.state === 'verifying'))) return exhaust(id, limit, deps);
     if (run.action) {
       if (run.flow && run.action.phase === 'review') return stepFlowReview(id, depsOf(deps), deps.flow);
-      // 待确认的动作分两种：写手在干，或负责人 AI 在诊断。两者的认领方式一样，收尾方式不同。
+      // 待确认的动作分两种：写手在干，或故障诊断 AI 在工作。两者的认领方式一样，收尾方式不同。
       return run.action.phase === 'diagnose' ? recoverDiagnosis(id, deps) : recover(id, deps);
     }
     if (run.state === 'diagnosing') return diagnose(id, deps);
@@ -719,7 +719,7 @@ async function settle(id: string, action: AutopilotAction, jobs: string[], outco
       advance(run, { kind: 'blocked', note: `无人看守这一版还没有自动审查和验收，${action.node} 的这次执行结果请主人接手看。` });
       return;
     }
-    advance(run, { kind: 'failed', note: `${action.node} 这一次没成（第 ${action.attempt} 次尝试），等负责人 AI 诊断。` });
+    advance(run, { kind: 'failed', note: `${action.node} 这一次没成（第 ${action.attempt} 次尝试），等待自动故障诊断。` });
   });
 }
 
@@ -808,7 +808,7 @@ async function dispatchDiagnosis(id: string, action: AutopilotAction, deps: Auto
     await updateAutopilot(id, current => {
       if (current.action?.token !== action.token) return;
       delete current.action;
-      advance(current, { kind: 'blocked', note: `没能请负责人 AI 诊断：${started.refused.note}` });
+      advance(current, { kind: 'blocked', note: `没能派出只读故障诊断：${started.refused.note}` });
     });
     return 'ended';
   }

@@ -25,7 +25,7 @@ const iconOf = (ai: ConnectAi) => ai === 'dsh' ? 'deepseek' : ai;
 
 export function IntroPane() {
   return <>
-    <p className="intro-page-lead">接入后，这台电脑上的 AI 每次开会话、对话压缩之后，都会读到一段话：派活交给派活工作台，开工先读手册。</p>
+    <p className="intro-page-lead">这里接入的是“负责人提醒”，不是选手提示词。可能担任负责人的 AI 可以都提前接入；切换负责人时不用撤下原来的，也不用配置选手。新负责人会从工作台的持久状态接班。</p>
     <ConnectGroup />
     <PromptGroup />
   </>;
@@ -82,7 +82,7 @@ function PromptGroup() {
   // “复制”放在说明右边，一打开就看得到；提示词原文在下面，过长时自己滚动。
   return <SettingGroup head="其他 AI">
     <div className="setting-row intro-top">
-      <p className="intro-lead">不在上面的 AI，把这段贴进它的对话；它会问你要不要把那句话写进它自己的常驻规矩。命令行 <code>xagents intro</code> 打印的是同一段。</p>
+      <p className="intro-lead">要让列表外的 AI 担任负责人，把这段贴进它的对话；它会读取工作台状态，并询问是否安装常驻提醒。这里只用于负责人接班，不是给执行者的题目。命令行 <code>xagents intro</code> 打印的是同一段。</p>
       <div className="intro-actions">
         <Button variant="primary" onClick={copy}>复制</Button>
         <span className={state === 'idle' || state === 'copied' ? 'faint' : 'muted'} role="status">{state === 'copied' ? '已复制，去贴进 AI 的对话吧' : state === 'idle' ? '' : '没能复制：' + state}</span>

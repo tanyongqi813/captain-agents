@@ -16,6 +16,17 @@ export const MAX_TITLE_CHARS = 200;         // 标题片段上限
 export const MAX_GOAL_CHARS = 500;          // 业务结果片段上限
 export const MAX_ACCEPTANCE_ITEMS = 20;     // 验收条目数上限
 export const MAX_ACCEPTANCE_CHARS = 200;    // 单条验收上限
+export const MAX_EXECUTION_FILES = 20;
+export const MAX_EXECUTION_ITEMS = 12;
+export const MAX_EXECUTION_ITEM_CHARS = 240;
+
+export type ExecutionContract = {
+  files: string[];
+  fileLimit: number | null;
+  anchors: string[];
+  verification: string[];
+  baseline: string[];
+};
 
 // 允许的状态；之外的都算未知状态，诊断且不可派发。PASSED_WITH_NOTES 是认可的等价通过状态。
 export const PLAN_STATUSES = ['DRAFT', 'READY', 'IN_PROGRESS', 'CHANGES_REQUESTED', 'PASSED', 'PASSED_WITH_NOTES', 'BLOCKED'] as const;
@@ -27,6 +38,8 @@ export type PlanTask = {
   id: string; title: string; status: string; known: boolean;
   deps: { id: string; accepted: string[] }[];
   goal: string; acceptance: string[];
+  // 旧视图夹具/记录可以没有；真实规划解析始终填入。
+  execution?: ExecutionContract;
   // 仓库内相对路径（docs/tasks/TASK-数字.md）；缺失或不合法时是 null。
   spec: string | null;
   // 推荐执行者只是展示元数据：原样保留，不校验是否在 roster，更不得转成 Who。
@@ -89,6 +102,33 @@ function section(text: string, name: string): string[] {
   return body;
 }
 
+const cleanItem = (value: string) => clip(value.replace(/^\s*[-*]\s*/, '').replace(/`/g, ''), MAX_EXECUTION_ITEM_CHARS);
+const listItems = (text: string, name: string): string[] => section(text, name)
+  .filter(line => /^\s*[-*]\s+/.test(line))
+  .map(cleanItem).filter(Boolean).slice(0, MAX_EXECUTION_ITEMS);
+
+function executionContract(text: string): ExecutionContract {
+  const boundary = section(text, '执行边界');
+  const allowed = boundary.find(line => /^\s*[-*]\s*可修改\s*[:：]/.test(line));
+  const files = allowed ? [...allowed.matchAll(/`([^`]+)`/g)].map(match => match[1].trim())
+    .filter(path => path.length <= 240 && !/^([A-Za-z]:)?[\\/]/.test(path) && !path.split(/[\\/]/).includes('..'))
+    .slice(0, MAX_EXECUTION_FILES) : [];
+  const limitLine = boundary.find(line => /修改文件上限\s*[:：]/.test(line));
+  const rawLimit = limitLine ? Number(/修改文件上限\s*[:：]\s*(\d+)/.exec(limitLine)?.[1]) : NaN;
+  const fileLimit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= MAX_EXECUTION_FILES ? rawLimit : null;
+  const verifyLines = section(text, '执行者验证');
+  const verification: string[] = [];
+  let fenced = false;
+  for (const line of verifyLines) {
+    if (/^\s*```/.test(line)) { fenced = !fenced; continue; }
+    const item = line.trim();
+    if (fenced && item && [...item].length <= MAX_EXECUTION_ITEM_CHARS && !/[\x00-\x1f\x7f-\x9f]/u.test(item)) verification.push(item);
+    if (verification.length >= MAX_EXECUTION_ITEMS) break;
+  }
+  return { files: [...new Set(files)], fileLimit, anchors: listItems(text, '精确锚点'), verification,
+    baseline: listItems(text, '已知基线') };
+}
+
 // 解析 spec 的前置任务字段：找出每个 TASK-数字，它后面（到下一个任务或行尾）出现的通过状态都认可；
 // 没写通过状态时按 PASSED 要求。
 export function parseDeps(value: string | null): { id: string; accepted: string[] }[] {
@@ -106,7 +146,7 @@ export function parseDeps(value: string | null): { id: string; accepted: string[
 
 // 解析 Task Spec 文本：顶部字段 + 业务结果/验收标准两个章节的受限纯文字片段。只做字符串处理。
 // depsRaw 保留“前置任务”字段原文：调用方用它区分“字段缺失”和“字段存在但没有可识别的 TASK-数字”（都算畸形）。
-export function parseTaskSpec(text: string): { status: string | null; depsRaw: string | null; deps: { id: string; accepted: string[] }[]; suggested: string | null; goal: string; acceptance: string[] } {
+export function parseTaskSpec(text: string): { status: string | null; depsRaw: string | null; deps: { id: string; accepted: string[] }[]; suggested: string | null; goal: string; acceptance: string[]; execution: ExecutionContract } {
   const status = fieldValue(text, '状态');
   const depsRaw = fieldValue(text, '前置任务');
   const suggested = fieldValue(text, '推荐执行者');
@@ -118,7 +158,7 @@ export function parseTaskSpec(text: string): { status: string | null; depsRaw: s
     acceptance.push(clip(item[1].replace(/`/g, ''), MAX_ACCEPTANCE_CHARS));
     if (acceptance.length >= MAX_ACCEPTANCE_ITEMS) break;
   }
-  return { status: status ? status.toUpperCase() : null, depsRaw, deps: parseDeps(depsRaw), suggested: suggested || null, goal, acceptance };
+  return { status: status ? status.toUpperCase() : null, depsRaw, deps: parseDeps(depsRaw), suggested: suggested || null, goal, acceptance, execution: executionContract(text) };
 }
 
 // spec 链接契约：只接受仓库内 docs/tasks/TASK-数字.md（反斜杠先按 posix 语义规范化）。
@@ -193,7 +233,7 @@ export async function readTaskPlan(project: { name: string; repo: string }): Pro
     const problems: string[] = [];
     const linkProblem = specLinkProblem(row.link);
     let specPath: string | null = null;
-    let spec: { status: string | null; depsRaw: string | null; deps: { id: string; accepted: string[] }[]; suggested: string | null; goal: string; acceptance: string[] } | null = null;
+    let spec: { status: string | null; depsRaw: string | null; deps: { id: string; accepted: string[] }[]; suggested: string | null; goal: string; acceptance: string[]; execution: ExecutionContract } | null = null;
     if (linkProblem) problems.push(`${row.id}：Task Spec 路径不合法（${row.link}）：${linkProblem}。`);
     else {
       // 链接相对 docs/ 解析（契约：docs/tasks/TASK-数字.md）。
@@ -235,7 +275,7 @@ export async function readTaskPlan(project: { name: string; repo: string }): Pro
     const known = (PLAN_STATUSES as readonly string[]).includes(status);
     if (spec?.status && !known) problems.push(`${row.id}：未知状态 ${status}，无法进入可执行队列。`);
     tasks.push({ id: row.id, title: clip(row.title, MAX_TITLE_CHARS), status, known,
-      deps: spec?.deps ?? [], goal: spec?.goal ?? '', acceptance: spec?.acceptance ?? [], spec: specPath, suggested: spec?.suggested ?? null,
+      deps: spec?.deps ?? [], goal: spec?.goal ?? '', acceptance: spec?.acceptance ?? [], execution: spec?.execution ?? { files: [], fileLimit: null, anchors: [], verification: [], baseline: [] }, spec: specPath, suggested: spec?.suggested ?? null,
       ready: false, problems });
   }
 

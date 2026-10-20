@@ -27,10 +27,12 @@ async function setup(t: TestContext, installed = true) {
 test('常驻规则接入任务台账：有 docs/TASK_LIST.md 时先读台账和当前 spec，推荐执行者不绑定选手、不自动执行全部任务', () => {
   assert.match(LEAD_RULE, /`docs\/TASK_LIST\.md`/);
   assert.match(LEAD_RULE, /Task Spec/);
-  assert.match(LEAD_RULE, /范围、约束和验收以 spec 为准/);
-  assert.match(LEAD_RULE, /只做状态允许且依赖已满足的任务/);
+  assert.match(LEAD_RULE, /Task Spec 仍是负责人的长期事实源/);
+  assert.match(LEAD_RULE, /胶囊是选手本轮唯一执行合同/);
+  assert.match(LEAD_RULE, /不要求选手全文重读台账/);
+  assert.match(LEAD_RULE, /只做状态允许、依赖已满足且主人已授权的任务/);
   assert.match(LEAD_RULE, /“推荐执行者”只是参考/);
-  assert.match(LEAD_RULE, /台账存在不等于把任务全做掉/);
+  assert.match(LEAD_RULE, /主人已授权/);
 });
 
 test('各家状态、Claude 更新、Grok 共用，不读其他配置', async t => {

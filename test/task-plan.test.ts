@@ -4,7 +4,7 @@ import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { context, exec } from './helpers.ts';
-import { MAX_ACCEPTANCE_ITEMS, MAX_LIST_BYTES, MAX_TASKS, readTaskPlan, resolveTaskSpec } from '../src/core/task-plan.ts';
+import { MAX_ACCEPTANCE_ITEMS, MAX_LIST_BYTES, MAX_TASKS, parseTaskSpec, readTaskPlan, resolveTaskSpec } from '../src/core/task-plan.ts';
 import { addProject } from '../src/core/project.ts';
 import { ensureHome } from '../src/core/paths.ts';
 import { buildView } from '../src/core/view.ts';
@@ -51,6 +51,16 @@ test('没有 docs/TASK_LIST.md：present 为 false，无诊断，旧项目行为
   assert.deepEqual(plan.tasks, []);
   assert.deepEqual(plan.ready, []);
   assert.deepEqual(plan.diagnostics, []);
+});
+
+test('Task Spec 只提取有界执行胶囊：相对路径、锚点、命令与已知基线', () => {
+  const spec = parseTaskSpec(`${specText()}\n## 精确锚点\n\n- \`src/a.ts\` 的 \`run\`\n\n## 执行边界\n\n- 可修改：\`src/a.ts\`、\`test/a.test.ts\`、\`../escape\`、\`/absolute\`\n- 修改文件上限：2\n\n## 执行者验证\n\n\`\`\`bash\nnpm run typecheck\nnode --test test/a.test.ts\n\`\`\`\n\n## 已知基线\n\n- quota 的 PTY 用例不排查\n`);
+  assert.deepEqual(spec.execution, {
+    files: ['src/a.ts', 'test/a.test.ts'], fileLimit: 2,
+    anchors: ['src/a.ts 的 run'],
+    verification: ['npm run typecheck', 'node --test test/a.test.ts'],
+    baseline: ['quota 的 PTY 用例不排查'],
+  });
 });
 
 test('合法台账与 specs：稳定输出任务、依赖、状态、目标、验收与 ready 队列', async t => {

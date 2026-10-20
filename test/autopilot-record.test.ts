@@ -530,7 +530,7 @@ test('诊断之后的四条出路写在状态机里：continue、verify、owner 
   assert.equal(run.state, 'needs_owner');
   assert.equal(run.ownerCode, 'owner_requested');
   assert.equal(run.ownerNote, '要读主人的登录文件');
-  assert.match(run.reason!, /负责人 AI 判断这件事不能自动处理/);
+  assert.match(run.reason!, /自动故障诊断判断这件事不能自动处理/);
   for (const event of [{ kind: 'continue' }, { kind: 'retry' }, { kind: 'verify' }] as const) {
     assert.equal(advance(run, event), false, '收尾之后什么都推不动');
   }

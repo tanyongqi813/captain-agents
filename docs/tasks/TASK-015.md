@@ -1,6 +1,7 @@
 # TASK-015：按完成总成本生成派活参考
 
-- 状态：`READY`
+- 状态：`PASSED`
+- 最新评审：`docs/reviews/TASK-015/attempt-01.md`（历史三轮记录保留；本轮定向修正通过，尚未完成整合验收）
 - 优先级：`P2`
 - 难度等级：`High`
 - 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`；沿用现有 roster、settings、quota、profiles 和任务记录
@@ -61,8 +62,65 @@ node --test --test-timeout=120000 test/dispatch-advice.test.ts test/guide.test.t
 
 ## 实施报告
 
-待执行者填写：改动摘要、验证结果、未完成项和 diff 摘要。
+2026-10-20，只改了三轮评审里的流程时长归档边界。状态仍是 `CHANGES_REQUESTED`。没有提交，没有 push。没有改用量计算、派活规则、TASK-016 或 TASK-018。
+
+已归档的轮仍从 `rounds` 读。当前轮如果还没归档，就用任务顶上的开始、结束和秒数，和历史轮一起算。归档之后顶上的秒数变成各轮合计，这时只认各轮，不再加一次。时间段重叠时仍取并集。当前轮还在排队或进行，或者开始时间沿用了上一轮、秒数对不上起止，整段保持未知，不会只拿已归档的 30 秒当成赶得上。
+
+30 秒加 100 秒的记录，归档前任务顶上仍是 100 秒、历史轮只有 30 秒，样本时长已是 130 秒。调用真实的归档函数之后，样本仍是 130 秒，费用和 60 秒期限下的结论也不变：超期限，不推荐。重叠的两轮归档前后都是 150 秒，不是把 120 和 90 连加，也不是用归档后的合计 210 秒。
+
+验证：
+
+- `npm run typecheck`：通过。
+- `node --test --test-timeout=120000 test/dispatch-advice.test.ts test/guide.test.ts test/quota.test.ts test/plan-dispatch.test.ts test/task-cost.test.ts`：53 通过、0 失败。这一次在隔离外跑，隔离里没跑。
+
+没跑界面测试、窗口冒烟和 `npm run verify`。参考仍不会派活。
 
 ## 评审记录
 
-待 Codex 评审。
+### 2026-10-19 首轮复审：`CHANGES_REQUESTED`
+
+负责人复跑类型检查通过；指定测试首次 32/33 通过，quota.test.ts 的「执行器识别分段回复」因临时 pids 文件不存在失败，单独按 test-name-pattern 重跑 1/1 通过。这是本轮观测到的进程测试不稳定，不能写成首次 33/33。以下功能缺陷需要修正，本轮不提交、不 push。
+
+1. **样本归属、成功依据和完整费用链不可靠。** samplesFromJobs 以输入列表中最后一个 done 作为完成者，以任意历史 verify.ok=true 作为整件任务达标。实测「Codex 实现并验收通过 + Luna 只读审查」输出 accepted=true、who=codex-luna、kind=实现、amount=2；旧轮通过而后续轮失败仍输出 accepted=true。输入顺序也会改变归属。不能把审查者当成功写手、把过去通过当后续失败的达标依据。按权威角色、任务/自治执行和最终复审验收证据形成样本，不能确认时保留未知并不进入可比成功样本。整单换人的成本可保留，但不能当作最终选手单独实现的能力证据。当前仅选 job.plan、未传 runs 的 buildLedger 也遗漏只有自治关联的诊断/审查与缺失引用，不能直接称完整费用。复用 TASK-017 账本关联语义，纳入 runs、项目仓库范围、缺项、失败和停止记录。补打乱顺序、写手+审查、旧通过后失败、换人、独立执行/重复 Task、仅自治关联及缺失费用的回归，不额外派题。
+2. **额度新鲜度及近似值未按单家事实处理。** fresh 只看 snapshot.queriedAt，不看 provider.at 或原始近似标志。实测 snapshot=10-19、Codex provider.at=10-01 时 gate=pass 且 preference=codex，仍显示剩余 70 个点。须按每家自己的时间和现有额度有效期判断，未来/非法/过期时间、查失败保留旧值、近似值、窗口缺项均明确不确定，不得据此生成确定可用余量或推荐。补「其他家刷新但本家仍旧」「近似窗口」以及实际缓存保留旧数据的测试，不修改真正派发的权威规则。
+3. **预算与真实手册入口接线不完整，下一步比较口径也有误。** adviceSection 读了 cost settings，却不把有效账户余额/来源/有效期映射到 budgets，也不把已有 listedProviders 的不可用原因传给 unavailable；因此合成单测中的预算不足/未安装拒绝并未在真实入口生效。预算目前按 who 而非共享付款账户建模，不能证明同账户多模型共用余量。另 budgetNote 始终拿历史 fullCost.high 与余额比较，mode=next 应比较预计剩余费用，不能因历史成本高拒绝仍付得起的恢复方案；币种不同或过期余额不能默认为足够。补 guideAppendix 真实接线测试、未安装但有历史样本、余额不足/未知/过期、共享账户、历史成本9/剩余方案1/余额2等回归。只做只读参考，不实现 TASK-018 的预占或强制拦截，不新增登录探针或网络查询。
+4. **最终输出缺少不确定性证据。** formatDispatchAdvice 未输出 candidate.uncertain 与 dataAt，用户看不到具体缺项；缺难度/角色/样本很少时仍直接给出优先推荐，没有承诺的低可信说明。实测单个无难度样本输出不含「样本不足」或数据时间。人工经验仅过滤 recordedAt，validFrom/validUntil 未检查，过期倍率也当当前参考展示。需在真实附录中显示数据时间、候选不可用原因、样本缺项与低可信说明；经验未生效/过期明确标记或排除，不作为有效依据。不按供应商猜难度，不要求提前实现 TASK-016。
+
+范围仍为本任务 dispatch-advice.ts、guide.ts 及对应测试，必要时最小复用成本账本接口；不改变 roster/隔离/策略，不启动 AI、不新增依赖、不自动派活或换人。
+
+验证命令：
+
+```bash
+npm run typecheck
+node --test --test-timeout=120000 test/dispatch-advice.test.ts test/guide.test.ts test/quota.test.ts test/plan-dispatch.test.ts test/task-cost.test.ts
+```
+
+另在临时 XAGENTS_HOME 中通过 guideAppendix 验证真实附录消费账户资料、已登记任务/自治记录与可用性；断言零 AI/网络查询、无新任务/副本、资料不变。报告逐项复现与修复证据、未跑项目和 diff 摘要，不提交、不 push。
+
+优先级复核：已复核，无调整。TASK-015 保持 P2 / High，状态改 CHANGES_REQUESTED；TASK-016/018 仍为 P2 / High / READY，其前置未改变，不因此阻塞。下一步先修正 TASK-015。
+
+### 2026-10-19 二轮复审：`CHANGES_REQUESTED`
+
+负责人重跑类型检查通过；首轮要求的五个测试文件 49/49 通过，零失败、零跳过。已确认写手/审查基本区分、输入排序、旧验收不过沿用、单家数据时间/近似值、手册预算和安装情况接线、剩余费用比较、低可信说明与人工经验有效期均有修正。但额外边界仍有以下问题：
+
+1. **自治关联任务仍未真正加入账本输入。** samplesFromJobs 只把有 job.plan 的任务放进 group.jobs，虽收集 run 的 linked IDs，却没有把全局 jobs 中同项目同仓库的已存在关联任务补入 ordered。实测 writer 有 plan、诊断 d 没有 plan、run.diagnoses.jobs=['d']，且 jobs 明确包含 d，输出却写「找不到任务 d」，费用变未知。这不满足首轮“仅自治关联任务”的修正要求。按 TASK-017 相同归属规则将关联记录合并并稳定 ID 去重；跨项目引用拒绝、真正缺失保持缺项。补仅自治关联写手/审查/诊断、混合 plan 与 run 关联、重复引用及不同仓库同名任务用例；不要通过给测试全部补 plan 绕过。
+2. **期限估计漏算审查、诊断与完整流程时间。** 样本金额使用整单账本，但 seconds 仅相加 writers。复现写手30秒、只读审查100秒，样本金额含两者、seconds却为30；deadlineSeconds=60时 preference=codex 且 deadline=inside，完整串行工作实际已需130秒。使用完整流程的可靠时间依据，至少纳入审查/诊断/失败/续接；并行活动不得盲目相加冒充墙钟耗时，缺可靠时间或完整性时保留未知。mode=next 应使用预计剩余时间证据，不能直接把历史全流程时间当剩余。补写手30+串行审查100/期限60、诊断返工、多轮归档、并行区间和未知时间用例。
+3. **中转预算未知仍可给出确定优先推荐。** quotaGate 为 DeepSeek 返回 uncertain，但 viable 不拒绝 uncertain，只用中文正则找若干词；「不占官方套餐，要看单独的预算」没有命中。预算缺失时 budgetNote 又直接返回 null。实测 quota=null、budgets未提供、有 DeepSeek 成本样本3 CNY时返回 action=suggest、preference=deepseek，同时候选写着额度不确定、不能据此派发。显式建模预算/额度的可用、未知与不足状态，不依赖展示文案作控制条件。无有效付款账户/余额证据时只能条件说明或 ask，不能把未知当足够；有可靠单独预算时与官方套餐分开判定。自定义中转模型、快速版/带强度模型不能因只匹配 spec(who).model 而静默漏掉应有预算，缺可确定映射按未知。补 DeepSeek无预算、余额未知/过期、自定义模型绑定、有效预算及中文文案变更不影响决策的回归。不实现 TASK-018 预占，不改变实际派发规则。
+
+范围仍为 TASK-015 的派活参考、手册接线及测试；不要修改正在并行实施的 TASK-016/018 或其共用成本契约。如确需接口变更先报告。继续运行首轮相同的 typecheck 和五文件测试命令，另补真实 guideAppendix 关联/预算场景，报告逐项证据、diff 摘要及未跑验证。不提交、不 push。本轮只更新评审文档，未修改实现代码。
+
+优先级复核：已复核，无调整。TASK-015 仍 P2 / High / CHANGES_REQUESTED；TASK-016/018 的 P2 / High 与现有前置不变。先修 TASK-015，本轮不派发其他任务。
+
+### 2026-10-19 三轮复审：`CHANGES_REQUESTED`
+
+二轮第1项自治关联任务归集、第3项结构化预算未知/不足判断已修正；同项目仓库关联补入、去重与跨项目/缺失诊断有对应回归。第2项整体流程时间已纳入审查/诊断、并行区间取并集，并支持显式剩余时间，但仍有一处验收阻断：
+
+**当前轮尚未归档时被历史 rounds 遮掉。** flowSeconds 只要 rounds 非空，就只读取 rounds，忽略 job.started/ended/seconds 表示的当前轮。复现：round1 00:00:00–00:00:30（30秒）；resume.round=2，当前轮00:01:00–00:02:40（100秒），state=done且verify.ok=true，第一轮已归档、第二轮尚未foldRounds。样本费用正确含两轮，accepted=true，但seconds=30；期限60秒时返回deadline=inside、preference=codex。对同一记录调用真实foldRounds后seconds才变成130。归档只是表示变化，不应改变期限判断。
+
+仅修正 flowSeconds 与必要的共用轮次读取逻辑及回归。按 wake.ts / TASK-017 的真实契约同时读取已归档轮与尚未归档当前轮，识别 job 顶层汇总字段，防止遗漏或重复；当前未结束、起止不可靠时保持未知。不要改历史 usage、派活规则或并行 TASK-016/018。不要仅在测试里预先 foldRounds 或把当前轮补到 rounds 绕过实际读法。
+
+必须新增：上述30+100秒记录归档前/后样本均130秒、60秒期限均不能推荐；多轮结束但未归档、已汇总、当前queued/running、当前时间未知、区间重叠及归档前后费用/时间/判断一致的测试。继续运行二轮指定的 typecheck 和五文件测试命令，提供简短 Implementation Report、逐项结果与diff摘要；不提交、不push。
+
+本轮验证：类型检查通过；五文件测试首次51/52通过，失败仍是quota.test.ts「执行器识别分段回复」临时pids文件未生成，单独按测试名重跑1/1通过，不能称首次全过。独立纯函数复现证实上述功能缺陷。未跑完整verify/UI/Electron，存在功能阻断，不进入通过后提交同步。
+
+优先级复核：已复核，无调整。TASK-015 保持P2 / High / CHANGES_REQUESTED；TASK-016/018前置和优先级不变。下一步只修本任务剩余的流程时间归档边界。

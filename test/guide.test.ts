@@ -46,7 +46,7 @@ test('手册里提到的每个 xagents 子命令和参数，都在 --help 里真
 test('手册接入了任务台账约定：台账和 spec 是规划来源，推荐执行者不绑定选手，无台账项目不受影响', async () => {
   const manual = await readFile(manualFile, 'utf8');
   assert.match(manual, /### 项目里有任务台账（docs\/TASK_LIST\.md）时/);
-  assert.match(manual, /任务范围、顺序、状态和验收标准以台账和 spec 为准/);
+  assert.match(manual, /任务范围、顺序、状态和验收标准仍?以台账和 spec 为准/);
   assert.match(manual, /台账存在不等于自动执行全部任务/);
   assert.match(manual, /“推荐执行者”或类似字段只是原规划流程的参考，不是派活指令，不绑定工作台选手/);
   assert.match(manual, /没有任务台账的项目一切照旧/);

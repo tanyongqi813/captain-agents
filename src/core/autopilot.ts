@@ -64,7 +64,7 @@ export const MAX_DIAGNOSES_PER_NODE = 3;
 
 // 待确认的外部动作：先落这个再动手。jobs 只在外部动作真的启动后才写；
 // 崩溃恢复时"有令牌没 jobs"要靠外部证据（任务记录里的同一个令牌）判断有没有启动过。
-// phase：这个动作是写手在干（execute）还是请负责人 AI 诊断（diagnose）；旧登记没有这一字段，按 execute 读。
+// phase：这个动作是写手在干（execute）还是只读故障诊断在工作（diagnose）；旧登记没有这一字段，按 execute 读。
 // mode：诊断决定"补做"时是 continue（叫醒上一轮那件活，保住副本里的改动），其余是 execute（从起点新派）。
 export type AutopilotAction = {
   token: string; node: string; attempt: number; at: string; jobs?: string[];

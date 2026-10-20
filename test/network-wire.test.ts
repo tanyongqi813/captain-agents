@@ -11,7 +11,7 @@ import { whos, isolationOf, vendorOf } from '../src/core/roster.ts';
 import type { Who } from '../src/core/roster.ts';
 import type { Job } from '../src/core/job.ts';
 import type { Project } from '../src/core/project.ts';
-import { prompt } from '../src/core/prompt.ts';
+import { prompt, workerPrompt } from '../src/core/prompt.ts';
 import { dispatch } from '../src/core/dispatch.ts';
 import { ensureHome, jobDir } from '../src/core/paths.ts';
 import { setNetworkAllowed } from '../src/core/settings.ts';
@@ -115,6 +115,15 @@ test('题目仅在开网时多要求的那一句', async t => {
   assert.equal(await prompt(p, c.task), `${common}\n\n---\n\n${task}\n`);
   assert.equal(await prompt(p, c.task, false), await prompt(p, c.task));
   assert.equal(await prompt(p, c.task, true), `${common}\n\n---\n\n这件活可以联网。只为完成本题联网，不要把仓库内容、报告或任何文件内容发到外面。\n\n---\n\n${task}\n`);
+});
+
+test('DeepSeek 和 Kimi 按 job 追加上下文节流，其他选手不受影响', () => {
+  const base = '# 执行胶囊\n';
+  for (const who of ['deepseek', 'deepseek-flash', 'kimi'] as const) {
+    assert.match(workerPrompt(base, who), /上下文节流规则/);
+    assert.match(workerPrompt(base, who), /不要重读整份 TASK_LIST/);
+  }
+  for (const who of ['codex', 'grok', 'cursor-opus'] as const) assert.equal(workerPrompt(base, who), base);
 });
 
 test('真实 CLI 派活替身：总开关管所有项目，快照 true，结束展示一句话，无代理文件', async t => {

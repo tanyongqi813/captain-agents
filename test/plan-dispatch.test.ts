@@ -30,11 +30,11 @@ function listTable(rows: string[][]): string {
 }
 const row = (id: string, title: string, status: string, deps = '无') => [`[${id}](tasks/${id}.md)`, title, status, 'P1', 'Medium', deps];
 
-function specText(fields: { status?: string; deps?: string; goal?: string; acceptance?: string[] } = {}): string {
+function specText(fields: { status?: string; deps?: string; goal?: string; acceptance?: string[]; execution?: string } = {}): string {
   return ['# TASK-000：样例', '',
     `- 状态：\`${fields.status ?? 'READY'}\``, '- 优先级：`P1`', '- 难度等级：`Medium`',
     `- 前置任务：${fields.deps ?? '无'}`, '', '## 业务结果', '', fields.goal ?? '把事办成。', '',
-    '## 验收标准', '', ...(fields.acceptance ?? ['第一条验收通过。']).map((item, i) => `${i + 1}. ${item}`), ''].join('\n');
+    '## 验收标准', '', ...(fields.acceptance ?? ['第一条验收通过。']).map((item, i) => `${i + 1}. ${item}`), '', fields.execution ?? ''].join('\n');
 }
 
 // 登记一个带任务规划的项目：仓库已提交（派发前的不提交检查要过）。
@@ -91,6 +91,24 @@ test('READY 且依赖通过的任务：派发成功，任务记录带上 Task ID
   const records = await listJobs();
   assert.equal(records.length, 1);
   assert.deepEqual(records[0].plan, { taskId: 'TASK-002', spec: 'docs/tasks/TASK-002.md' });
+});
+
+test('规划派发生成短执行胶囊，带文件白名单、验证上限和已知基线', async t => {
+  const execution = ['## 精确锚点', '', '- `src/core/a.ts` 的 `run`', '', '## 执行边界', '',
+    '- 可修改：`src/core/a.ts`、`test/a.test.ts`', '- 修改文件上限：2', '', '## 执行者验证', '', '```bash',
+    'npm run typecheck', 'node --test test/a.test.ts', '```', '', '## 已知基线', '', '- quota PTY 不排查', ''].join('\n');
+  const c = await plannedProject(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '短胶囊', 'READY')]),
+    'docs/tasks/TASK-001.md': specText({ execution }),
+  });
+  const [job] = await planDispatch({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'] }, noop);
+  const text = await readFile(join(jobDir(job.id), 'prompt.md'), 'utf8');
+  assert.match(text, /# 执行胶囊：TASK-001/);
+  assert.match(text, /src\/core\/a\.ts 的 run/);
+  assert.match(text, /修改文件上限：2/);
+  assert.match(text, /只运行上述命令/);
+  assert.match(text, /quota PTY 不排查/);
+  assert.match(text, /Task Spec 是负责人的长期规划档案/);
 });
 
 test('DRAFT、依赖未过、台账里没有的任务都不能派发', async t => {
