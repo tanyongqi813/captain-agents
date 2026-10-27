@@ -26,10 +26,38 @@ import { initialRealCheck } from './real.ts';
 import { readChat } from './chat.ts';
 import { assertDeepseekAvailable } from './deepseek-settings.ts';
 import { sharedAutopilotWorktree } from './autopilot-worktree.ts';
+import { capsuleFingerprint } from './task-plan.ts';
 
 // team：小队派的队员（docs/design-team.md），记进任务记录，看板据此画进小队卡。
 // plan：从项目任务规划派发的追溯元数据（docs/tasks/TASK-006.md），由规划派发入口下发，写进任务记录。
-export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string }; autopilotRole?: 'writer' | 'reviewer' };
+export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string }; autopilotRole?: 'writer' | 'reviewer';
+  capsule?: { rel: string; fingerprint: string; anchors?: string[] } };
+// 规划派发要求起点自带这一轮的 Execution Capsule 原文：主工作区没提交的规划文件不会进入新副本，
+// 起点里没有或和工作区这一份对不上就在注册任务、开副本、启动选手之前拒绝，并把两边的提交说清楚。
+// 起点还得有 Capsule 明列的每一个源码锚点文件：缺哪个就报哪个，不猜替代文件、不降级成警告。
+export async function assertCapsuleInStart(repo: string, base: string, capsule: { rel: string; fingerprint: string; anchors?: string[] }): Promise<void> {
+  const short = (sha: string) => (sha ? sha.slice(0, 7) : '未知');
+  const head = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+  let text: string;
+  try {
+    text = await git(repo, ['show', `${base}:${capsule.rel}`]);
+  } catch {
+    throw new Error(`所选起点 ${short(base)} 里没有 ${capsule.rel}：主工作区（HEAD ${short(head)}）这份执行说明还没提交，选手的副本看不到它。先把它提交（或用 --base 指向包含它的提交）再派活。`);
+  }
+  if (capsuleFingerprint(text) !== capsule.fingerprint) {
+    throw new Error(`所选起点 ${short(base)} 里的 ${capsule.rel} 和主工作区（HEAD ${short(head)}）这一份内容对不上：起点不是同一版执行说明。把当前这份提交到起点分支，或用 --base 指向包含它的提交，再派活。`);
+  }
+  const missing: string[] = [];
+  for (const anchor of capsule.anchors ?? []) {
+    // 必须是起点里的普通文件（blob）：目录、符号链接目标缺失或根本没有都算缺。
+    try {
+      if ((await git(repo, ['cat-file', '-t', `${base}:${anchor}`])).trim() !== 'blob') missing.push(anchor);
+    } catch { missing.push(anchor); }
+  }
+  if (missing.length) {
+    throw new Error(`所选起点 ${short(base)} 里缺这一轮执行说明列出的源码锚点：${missing.join('、')}。主工作区（HEAD ${short(head)}）有这些文件，选手的副本看不到：先把它们提交到起点，或用 --base 指向包含它们的提交，再派活。`);
+  }
+}
 export async function launch(job: Job, cli: string) {
   const fd = await open(join(jobDir(job.id), 'supervisor.log'), 'a', 0o600);
   try {
@@ -72,6 +100,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
     throw new Error(`主目录有 ${dirty.length} 个文件没提交（${shown}），选手的副本看不到这些改动。先把要给选手的东西提交（比如骨架和共同约定，提交到分支并用 --base 指向它）；确认这些改动和这件活无关，再加 --dirty-ok 派活。`);
   }
   const base = (await git(project.repo, ['rev-parse', '--verify', '--end-of-options', `${options.base || 'main'}^{commit}`])).trim();
+  if (options.capsule) await assertCapsuleInStart(project.repo, base, options.capsule);
   // 现成副本只能借用已登记的群副本，不能借这个入口扩大可写路径。
   const chat = options.chat ? await readChat(options.chat.id) : undefined;
   if (!!options.worktree !== !!chat) throw new Error('使用群副本时必须同时指定 worktree 和 chat。');

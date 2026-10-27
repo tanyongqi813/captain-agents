@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
-import { context, until } from './helpers.ts';
+import { context, until, upgradeAutopilotFixture } from './helpers.ts';
 import { ensureHome, paths } from '../src/core/paths.ts';
 import { addProject } from '../src/core/project.ts';
 import {
@@ -46,6 +46,7 @@ async function autopilotProject(t: TestContext, files: Record<string, string>, n
     await mkdir(join(target, '..'), { recursive: true });
     await writeFile(target, content);
   }
+  await upgradeAutopilotFixture(c.repo);
   await c.git(['add', '.']);
   await c.git(['commit', '-m', '任务规划']);
   await addProject(name, c.repo, {});

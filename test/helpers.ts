@@ -11,6 +11,36 @@ import { alive } from '../src/core/platform.ts';
 
 export const root = resolve(import.meta.dirname, '..');
 export const fixture = join(root, 'test/fixtures/worker.ts');
+
+// 自治集成测试的历史夹具升级为正式派发契约；只作用于测试临时仓库。
+// 保留原目标、验收、状态和依赖，不能在生产代码中为旧项目自动伪造 Capsule。
+export async function upgradeAutopilotFixture(repo: string) {
+  const { parseTaskList, parseTaskSpec, TASK_SECTIONS, CAPSULE_SECTIONS } = await import('../src/core/task-plan.ts');
+  const list = join(repo, 'docs/TASK_LIST.md');
+  const rows = parseTaskList(await readFile(list, 'utf8'));
+  const table = ['# 功能任务清单', '', '| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 | 当前执行 |', '|---|---|---|---|---|---|---|'];
+  for (const row of rows) {
+    const target = join(repo, 'docs', row.link);
+    const raw = await readFile(target, 'utf8').catch(() => '');
+    const parsed = parseTaskSpec(raw);
+    const status = parsed.status ?? row.status, priority = parsed.priority ?? row.priority ?? 'P1', difficulty = parsed.difficulty ?? row.difficulty ?? 'Medium';
+    const ready = status === 'READY';
+    table.push(`| [${row.id}](${row.link}) | ${row.title} | ${status} | ${priority || 'P1'} | ${difficulty || 'Medium'} | ${parsed.deps.map(d => d.id).join(', ') || 'none'} | ${ready ? 'attempt-01' : 'none'} |`);
+    if (!raw || parsed.depsError) continue;
+    let body = raw.replace(/^#.*\n/, '');
+    for (const section of TASK_SECTIONS) if (!body.includes(`## ${section}\n`)) body += `\n## ${section}\n\n测试约定。\n`;
+    const deps = parsed.deps.map(d => `${d.id}[${d.accepted.join('|')}]`).join(', ') || 'none';
+    await writeFile(target, `# ${row.id} — ${row.title}\n\n- handoff_contract: \`1\`\n- status: \`${status}\`\n- priority: \`${priority || 'P1'}\`\n- difficulty: \`${difficulty || 'Medium'}\`\n- dependencies: \`${deps}\`\n- current_attempt: \`${ready ? '01' : 'none'}\`\n${body}`);
+    if (ready) {
+      const dir = join(repo, 'docs/execution', row.id); await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'attempt-01.md'), [`# Execution Capsule — ${row.id} / attempt-01`, '', '- handoff_contract: `1`', '- capsule_schema: `2`', '- dispatch_state: `READY`',
+        `- planning_source: \`docs/tasks/${row.id}.md\``, `- task_id: \`${row.id}\``, '- attempt: `01`', '- revision_reason: `initial`',
+        `- priority: \`${priority || 'P1'}\``, `- difficulty: \`${difficulty || 'Medium'}\``, '- required_planning_lookup: `none`', '',
+        ...CAPSULE_SECTIONS.flatMap(section => [`## ${section}`, '', section.startsWith('源码锚点') ? '1. `base.txt` — 测试仓库起点。' : section === '本轮唯一目标' ? parsed.goal || '完成替身任务。' : '仅用于离线替身测试。', ''])].join('\n'));
+    }
+  }
+  await writeFile(list, table.join('\n') + '\n');
+}
 // Windows 上不按记下的进程号补刀：号回收得很快，过后再按号结束会误伤别的测试的进程。
 export function killLeftover(pid: number | undefined) {
   if (!pid || process.platform === 'win32') return;

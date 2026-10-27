@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { TestContext } from 'node:test';
-import { context, root, until } from './helpers.ts';
+import { context, root, until, upgradeAutopilotFixture } from './helpers.ts';
 import { ensureHome, jobDir, paths } from '../src/core/paths.ts';
 import { readJob } from '../src/core/job.ts';
 import { addProject } from '../src/core/project.ts';
@@ -54,6 +54,7 @@ async function autopilotProject(t: TestContext) {
     await mkdir(join(target, '..'), { recursive: true });
     await writeFile(target, content);
   }
+  await upgradeAutopilotFixture(c.repo);
   await c.git(['add', '.']);
   await c.git(['commit', '-m', '任务规划']);
   await addProject('demo', c.repo, {});

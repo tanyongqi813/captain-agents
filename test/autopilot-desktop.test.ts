@@ -10,7 +10,7 @@ import type { AutopilotRun } from '../src/core/autopilot.ts';
 import { autopilotView } from '../src/core/autopilot-view.ts';
 import { consumeOwnerNotices } from '../src/core/owner-notifications.ts';
 import { startAutopilot } from '../src/core/autopilot-engine.ts';
-import { context } from './helpers.ts';
+import { context, upgradeAutopilotFixture } from './helpers.ts';
 import { ensureHome } from '../src/core/paths.ts';
 import { addProject } from '../src/core/project.ts';
 import { derive } from '../app/renderer/lib/board.ts';
@@ -25,6 +25,7 @@ async function world(t: TestContext) {
   await ensureHome(); await mkdir(join(c.repo, 'docs/tasks'), { recursive: true });
   await writeFile(join(c.repo, 'docs/TASK_LIST.md'), '# 任务\n\n| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 |\n|---|---|---|---|---|---|\n| [TASK-001](tasks/TASK-001.md) | 实现 | READY | P1 | High | 无 |\n');
   await writeFile(join(c.repo, 'docs/tasks/TASK-001.md'), '# TASK-001\n\n- 状态：`READY`\n- 优先级：`P1`\n- 难度等级：`High`\n- 前置任务：无\n\n## 业务结果\n\n完成代码。\n\n## 验收标准\n\n1. 通过测试。\n');
+  await upgradeAutopilotFixture(c.repo);
   await c.git(['add', '.']); await c.git(['commit', '-m', 'spec']); await addProject('demo', c.repo, {});
   return c;
 }

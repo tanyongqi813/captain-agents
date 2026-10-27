@@ -3,7 +3,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { context, until } from './helpers.ts';
+import { context, until, upgradeAutopilotFixture } from './helpers.ts';
 import { ensureHome } from '../src/core/paths.ts';
 import { addProject } from '../src/core/project.ts';
 import { aiAttempts, advance, createAutopilot, parseRun, readAutopilot, updateAutopilot } from '../src/core/autopilot.ts';
@@ -29,10 +29,12 @@ async function world(t: TestContext, verify = ['node -e "process.exit(0)"']) {
   await writeFile(join(c.repo, '.gitignore'), '.worktrees/\n');
   await writeFile(join(c.repo, 'docs/TASK_LIST.md'), '# 任务\n\n| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 |\n|---|---|---|---|---|---|\n| [TASK-001](tasks/TASK-001.md) | 实现 | READY | P1 | High | 无 |\n');
   await writeFile(join(c.repo, 'docs/tasks/TASK-001.md'), taskSpec);
+  await upgradeAutopilotFixture(c.repo);
+  const canonicalSpec = await readFile(join(c.repo, 'docs/tasks/TASK-001.md'), 'utf8');
   await c.git(['add', '.']); await c.git(['commit', '-m', 'task']);
   await addProject('demo', c.repo, { worktreeRoot: '.worktrees', verify });
   const run = await createAutopilot({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'], reviewer: 'codex-luna:high', policy: 'long' });
-  return { ...c, run };
+  return { ...c, run, canonicalSpec };
 }
 const graph: SplitNode[] = [
   { id: 'beta', title: '第二步', goal: '第二步保留第一步。', acceptance: '两步都在。', deps: ['alpha'] },
@@ -73,7 +75,7 @@ test('真实替身闭环：两个写节点按依赖串行累积，独立只读�
   assert.ok(jobs.filter(j => j.autopilotRole === 'reviewer').every(j => j.mode === 'read-only'));
   assert.ok(run.attempts.every(a => a.patch));
   assert.equal(await c.git(['status', '--porcelain']), before);
-  assert.equal(await readFile(join(c.repo, 'docs/tasks/TASK-001.md'), 'utf8'), taskSpec);
+  assert.equal(await readFile(join(c.repo, 'docs/tasks/TASK-001.md'), 'utf8'), c.canonicalSpec);
 });
 
 test('审查要求修改可以续接一次；仍不过则求助，不能把写手完成当成接受', async t => {
