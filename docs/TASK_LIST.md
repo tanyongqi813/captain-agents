@@ -30,7 +30,7 @@
 | [TASK-024](tasks/TASK-024.md) | 规划共享契约与安全迁移校对 | PASSED | P1 | High | TASK-023 | none |
 | [TASK-025](tasks/TASK-025.md) | 直接消费执行胶囊派活 | PASSED | P1 | High | TASK-024 | none |
 | [TASK-026](tasks/TASK-026.md) | 项目内与跨项目授权并行队列 | DRAFT | P1 | High | TASK-025, TASK-027, TASK-028, TASK-029, TASK-030 | none |
-| [TASK-027](tasks/TASK-027.md) | 单负责人复审与人工等价交接 | IN_PROGRESS | P1 | High | TASK-025, TASK-039, TASK-040 | attempt-02 |
+| [TASK-027](tasks/TASK-027.md) | 单负责人复审与人工等价交接 | PASSED | P1 | High | TASK-025, TASK-039, TASK-040 | none |
 | [TASK-028](tasks/TASK-028.md) | 主动停滞中断与负责人重规划 | DRAFT | P1 | High | TASK-027 | none |
 | [TASK-029](tasks/TASK-029.md) | 有序写手回退与最终失败通知 | DRAFT | P1 | High | TASK-027, TASK-028 | none |
 | [TASK-030](tasks/TASK-030.md) | 任务能力画像与初始执行者选择 | DRAFT | P2 | High | TASK-016, TASK-025 | none |

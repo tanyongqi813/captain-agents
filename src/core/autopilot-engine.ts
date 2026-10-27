@@ -453,7 +453,13 @@ export async function stepAutopilot(id: string, deps: AutopilotDeps = {}): Promi
       // 待确认的动作分两种：写手在干，或故障诊断 AI 在工作。两者的认领方式一样，收尾方式不同。
       return run.action.phase === 'diagnose' ? recoverDiagnosis(id, deps) : recover(id, deps);
     }
-    if (run.state === 'diagnosing') return diagnose(id, deps);
+    if (run.state === 'diagnosing') {
+      if (run.flow?.lead) {
+        await updateAutopilot(id, current => { advance(current, { kind: 'owner', code: 'owner_requested', note: '新负责人协议缺少可复核候选，没有改用旧故障诊断，请主人接手。' }); });
+        return 'ended';
+      }
+      return diagnose(id, deps);
+    }
     if (run.flow && run.state === 'reviewing') return stepFlowReview(id, depsOf(deps), deps.flow);
     if (run.state === 'verifying') return run.flow ? stepFlowVerify(id, deps.flow) : endVerify(id);
     return takeAction(id, deps);
@@ -718,6 +724,9 @@ async function settle(id: string, action: AutopilotAction, jobs: string[], outco
       if (run.flow && candidate) { run.flow.candidate = { hash: candidate, node: action.node, jobs }; return; }
       advance(run, { kind: 'blocked', note: `无人看守这一版还没有自动审查和验收，${action.node} 的这次执行结果请主人接手看。` });
       return;
+    }
+    if (run.flow?.lead && candidate) {
+      run.flow.candidate = { hash: candidate, node: action.node, jobs }; run.state = 'reviewing'; return;
     }
     advance(run, { kind: 'failed', note: `${action.node} 这一次没成（第 ${action.attempt} 次尝试），等待自动故障诊断。` });
   });

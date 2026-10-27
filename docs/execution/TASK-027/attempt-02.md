@@ -2,7 +2,7 @@
 
 - handoff_contract: `1`
 - capsule_schema: `2`
-- dispatch_state: `CLAIMED`
+- dispatch_state: `CLOSED`
 - planning_source: `docs/tasks/TASK-027.md`
 - task_id: `TASK-027`
 - attempt: `02`

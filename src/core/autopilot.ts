@@ -13,6 +13,9 @@ import { checkSplitGraph, isDiagnosisAction, isOwnerCode, MAX_SPLIT_DEPTH, owner
 import type { DiagnosisAction, OwnerCode, SplitNode } from './autopilot-diagnosis.ts';
 import type { Job } from './job.ts';
 import { stateNames } from './autopilot-state.ts';
+import { assertLeadRuntime, makeLeadRuntime, trustedLead } from './lead-runtime.ts';
+import type { LeadRuntime } from './lead-runtime.ts';
+import { assertCapsuleInStart } from './dispatch.ts';
 export { stateNames };
 
 // 无人看守（有界自治）的执行登记。设计见 docs/decisions/ADR-001-bounded-autonomy.md 与 docs/tasks/TASK-009.md。
@@ -86,7 +89,8 @@ export type AutopilotAttempt = {
 export type AutopilotNode = { id: string; depth: number; state: 'pending' | 'running' | 'passed' | 'failed' | 'split'; attempts: number; continues: number; retries: number; parent?: string; task?: SplitNode };
 export type AutopilotReview = { token: string; node: string; at: string; candidate: string; jobs?: string[]; verdict?: 'pass' | 'changes' | 'unclear'; usage?: { read: number; cached: number; out: number } };
 export type AutopilotFlow = {
-  version: 1; reviewer: string; accepted: string;
+  version: 1 | 2; reviewer: string; accepted: string;
+  lead?: LeadRuntime;
   candidate?: { hash: string; node: string; jobs: string[] };
   reviews: AutopilotReview[];
   verifyStarted?: string;
@@ -153,6 +157,7 @@ export type AutopilotStartOptions = {
   policy?: string;
   ro?: boolean;
   reviewer?: string;
+  leadReview?: boolean;
   expectedNetwork?: boolean;
 };
 
@@ -320,7 +325,7 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
   if (run.flow !== undefined) {
     const flow = run.flow as AutopilotFlow;
     const hash = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-    if (!flow || flow.version !== 1 || !isText(flow.reviewer, 100) || !WHO_SHAPE.test(flow.reviewer) || !hash(flow.accepted)
+    if (!flow || ![1, 2].includes(flow.version) || !isText(flow.reviewer, 100) || !WHO_SHAPE.test(flow.reviewer) || !hash(flow.accepted)
       || !Array.isArray(flow.reviews) || flow.reviews.length > PRESETS.long.attempts || who.length !== 1 || run.ro) throw bad('闭环登记无效');
     try { if (selection(flow.reviewer).who === selection(String(who[0])).who) throw new Error(); } catch { throw bad('审查者必须独立选择'); }
     if (flow.candidate && (!hash(flow.candidate.hash) || !nodes.some(n => n.id === flow.candidate!.node) || !isIds(flow.candidate.jobs) || !flow.candidate.jobs.length)) throw bad('候选补丁无效');
@@ -329,6 +334,15 @@ export function assertRun(value: unknown, id: string, prefix = `无人看守 ${i
         || review.jobs !== undefined && !isIds(review.jobs) || review.verdict !== undefined && !['pass', 'changes', 'unclear'].includes(review.verdict)) throw bad('审查记录无效');
       if (review.usage && (!isNumber(review.usage.read) || !isNumber(review.usage.cached) || !isNumber(review.usage.out))) throw bad('审查用量无效');
     }
+    if (flow.version === 2) {
+      const pendingAction = run.action as AutopilotAction | undefined; // 已由上面的 action 字段校验核对。
+      try { assertLeadRuntime(flow.lead, { taskId: String(run.taskId), reviewer: flow.reviewer, reviews: flow.reviews }); }
+      catch { throw bad('负责人身份、胶囊或决定制品不合法'); }
+      if (nodes.length !== 1 || nodes[0].id !== run.taskId || run.nextPrompt || pendingAction?.phase === 'diagnose'
+        || pendingAction?.mode === 'continue' || pendingAction?.mode === 'retry'
+        || flow.lead!.decisions.some(d => d.token === pendingAction?.token)) throw bad('新负责人协议不能混用旧细拆或自由提示词恢复');
+      if (nodes[0].state === 'passed' && !flow.lead!.decisions.some(d => d.reply.action === 'accept' && d.reply.binding.candidate === flow.accepted)) throw bad('节点没有负责人接受证据');
+    } else if (flow.lead !== undefined) throw bad('旧闭环不能携带新负责人协议记录');
     if (flow.verification && (typeof flow.verification.ok !== 'boolean' || !isWhen(flow.verification.at) || !isNumber(flow.verification.seconds)
       || !Array.isArray(flow.verification.steps) || flow.verification.steps.some(s => !s || typeof s.cmd !== 'string' || typeof s.ok !== 'boolean'
         || typeof s.summary !== 'string' || s.exit !== null && !Number.isInteger(s.exit)))) throw bad('闭环验收记录无效');
@@ -511,6 +525,8 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
   if (options.who.length > 6) throw new Error('无人看守的选手范围最多 6 位，请删掉几位。');
   if (options.who.some(item => typeof item !== 'string' || item.length > 100)) throw new Error('选手写法不对，请写成 选手:强度[:fast]。');
   if (options.ro !== undefined && typeof options.ro !== 'boolean') throw new Error('--ro 只能表示只读，不能带值。');
+  if (options.leadReview !== undefined && typeof options.leadReview !== 'boolean') throw new Error('负责人协议开关只能是布尔值。');
+  if (options.leadReview && (!options.reviewer || !trustedLead(options.reviewer))) throw new Error('新负责人协议必须显式选择受信的 Codex 负责人，不能用其他执行者代替。');
   if (options.reviewer !== undefined && (typeof options.reviewer !== 'string' || !WHO_SHAPE.test(options.reviewer)
     || options.who.length !== 1 || options.ro || selection(options.reviewer).who === selection(options.who[0]).who)) {
     throw new Error('自动审查闭环必须明确选择一位可写执行者和另一位只读审查者。');
@@ -529,9 +545,11 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
   for (const choice of choices) checkChoice(settings.workers, choice);
   if (options.reviewer) checkChoice(settings.workers, selection(options.reviewer));
   // 权威校验：重新读项目的任务规划，只有 TASK-006 判定为可执行的任务才能启动。
-  const { task } = await readyTask(project.name, options.taskId);
+  const { task, capsule } = await readyTask(project.name, options.taskId);
   const base = await projectBase(project.repo);
   if (!/^[0-9a-f]{7,64}$/.test(base)) throw new Error('这个项目的起点提交读不出来（仓库可能还没有提交），请先在仓库里提交一次。');
+  // 新协议在登记及创建自治副本之前复用规划派发的同一道起点闸门。
+  if (options.leadReview) await assertCapsuleInStart(project.repo, base, capsule);
   const createdAt = now.toISOString();
 
   // 一把全局锁把四件事串成一个动作：扫描已有登记 → 判同一任务有没有活跃执行 → 分配编号 → 建目录写初始登记。
@@ -552,7 +570,8 @@ export async function createAutopilot(options: AutopilotStartOptions, now = new 
       attemptCount: 0, nodeCount: 1,
       nodes: [{ id: task.id, depth: 0, state: 'pending', attempts: 0, continues: 0, retries: 0 }],
       attempts: [],
-      ...(options.reviewer ? { flow: { version: 1 as const, reviewer: options.reviewer,
+      ...(options.reviewer ? { flow: { version: options.leadReview ? 2 as const : 1 as const, reviewer: options.reviewer,
+        ...(options.leadReview ? { lead: makeLeadRuntime(capsule, options.reviewer) } : {}),
         accepted: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', reviews: [] } } : {}),
     };
     assertRun(JSON.parse(JSON.stringify(run)), id, `无人看守 ${id} 这次要写进去的登记不对`);

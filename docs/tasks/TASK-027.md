@@ -1,11 +1,11 @@
 # TASK-027 — 单负责人复审与人工等价交接
 
 - handoff_contract: `1`
-- status: `IN_PROGRESS`
+- status: `PASSED`
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-025[PASSED|PASSED_WITH_NOTES], TASK-039[PASSED|PASSED_WITH_NOTES], TASK-040[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `02`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -16,6 +16,7 @@
 - 不让执行者自行决定恢复策略或改写规划事实。
 - 不把完整任务历史、主人会话或未受限日志交给执行者。
 - 不在本任务实现换人顺序、并行队列或新能力评分。
+- 桌面显式入口、增量制品落入新 Git 起点后的授权续跑分别验收；本任务只交付显式运行协议，不声称完全无人看守。
 
 ## 架构设计
 

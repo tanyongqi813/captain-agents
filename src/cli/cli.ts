@@ -81,7 +81,8 @@ const help = () => `派活工作台：登记、派发和收集本机助手的任
   xagents team say <队号> "…"   # 负责人在频道里说一句，下一轮带给双方
   xagents team round <队号> [--note "…"]   # 停下的小队再走一轮
   xagents team stop <队号>   # 收场：停下在跑的那位和后台进程
-  xagents autopilot start <任务号> --project 名字 --who 选手:强度[:fast] [--who …] [--policy short|standard|long] [--ro] [--reviewer 审查者:强度]
+  xagents autopilot start <任务号> --project 名字 --who 选手:强度[:fast] [--who …] [--policy short|standard|long] [--ro] [--reviewer 审查者:强度] [--lead-review]
+    --lead-review 显式使用新负责人协议（负责人须为 Codex）；增量胶囊未提交到起点时保存后暂停，不自动提交或绕过起点检查
     无人看守：从项目规划里挑一项真正可执行的 READY 任务，平台自己盯着往下走。
     这一版只搭骨架：只派活、记账、按预算停，不自动细拆、不审查、不验收，走完一步就交给主人
   xagents autopilot status [编号]   # 不写编号列全部
@@ -403,11 +404,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       if (rest.length === 1 && rest[0] === '--help') { console.log(help()); return 0; }
       if (!rest.length) throw new Error('autopilot 命令只支持 start、status、list、resume 和 stop，请运行 xagents --help。');
       if (rest[0] === 'start') {
-        const p = parse(rest.slice(1), ['project', 'who', 'policy', 'reviewer'], ['ro'], ['who']);
+        const p = parse(rest.slice(1), ['project', 'who', 'policy', 'reviewer'], ['ro', 'lead-review'], ['who']);
         arity(p.positional, 1);
         if (!p.one('project')) throw new Error('请用 --project 指定已登记的项目。');
         if (!p.options.who?.length) throw new Error('请用 --who 指定至少一位选手，写法是 选手:强度[:fast]。');
-        await autopilotStart({ project: p.one('project')!, taskId: p.positional[0], who: p.options.who, policy: p.one('policy'), ro: p.switches.has('ro'), reviewer: p.one('reviewer') });
+        await autopilotStart({ project: p.one('project')!, taskId: p.positional[0], who: p.options.who, policy: p.one('policy'), ro: p.switches.has('ro'), reviewer: p.one('reviewer'), leadReview: p.switches.has('lead-review') });
         return 0;
       }
       if (rest[0] === 'status') { const p = parse(rest.slice(1)); arity(p.positional, 0, 1); await autopilotStatus(p.positional[0]); return 0; }

@@ -1,5 +1,5 @@
 import { budgetNames, isEndedState, listAutopilots, readAutopilot, stateNames } from '../core/autopilot.ts';
-import type { AutopilotRun } from '../core/autopilot.ts';
+import type { AutopilotRun, AutopilotStartOptions } from '../core/autopilot.ts';
 import { reconcileAutopilot, resumeAutopilot, startAutopilot, stopAutopilot } from '../core/autopilot-engine.ts';
 import { alive } from '../core/fsx.ts';
 import { localTime, table } from './format.ts';
@@ -23,7 +23,7 @@ function progress(run: AutopilotRun): string {
   return `推进进程 ${run.pid}`;
 }
 
-export async function autopilotStart(options: { project: string; taskId: string; who: string[]; policy?: string; ro?: boolean; reviewer?: string }) {
+export async function autopilotStart(options: AutopilotStartOptions) {
   const run = await startAutopilot(options);
   console.log(`无人看守：${run.id}`);
   console.log(`项目：${run.project}；任务：${run.taskId}（${run.spec}）`);
