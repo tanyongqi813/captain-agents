@@ -12,10 +12,17 @@ export async function autopilotView(): Promise<{ autopilots: ViewAutopilot[]; au
       const used = budgetUsed(run), active = isActiveState(run.state);
       const clean = (value: unknown, max = 300) => redactText(value, max, 'head', { repo: run.repo })
         .replace(/〈(?:仓库|副本)〉(?:[\\/][^\s，。；）)\]}]+)+/g, '〈路径已隐去〉');
+      // 决定文字不提供路径读取能力；未知绝对路径也保守隐去整段（可牺牲描述，不留下路径残片）。
+      const leadText = (value: string) => redactText(clean(value)
+        .replace(/(?:file:\/\/\/|[A-Za-z]:[\\/]|\\\\|\/)[^\r\n<>〈〉，。；！？、]*/g, '〈路径已隐去〉'), 300);
+      const lead = run.flow?.lead, last = lead?.decisions.at(-1);
       const event = notices?.find(n => n.id === run.ownerEvent);
       return { id: run.id, project: run.project, taskId: run.taskId, state: active && !alive(run.pid, run.pidSince) ? 'recovering' : run.state,
         active, managed: !!run.flow, created: run.created, ended: run.ended ?? null,
-        reason: run.ownerCode ? ownerReasons[run.ownerCode] : run.reason ? clean(run.reason) : null,
+        reason: lead && run.ownerCode === 'owner_requested' && run.reason ? leadText(run.reason)
+          : run.ownerCode ? ownerReasons[run.ownerCode] : run.reason ? clean(run.reason) : null,
+        leadReview: lead ? { decision: last ? { action: last.reply.action, at: last.at,
+          reason: leadText(last.reply.reason), capsuleCount: last.compilation?.capsules.length ?? 0 } : null } : null,
         writer: run.who[0], reviewer: run.flow?.reviewer ?? null, network: run.network,
         budget: { policy: run.policy.id, minutesLeft: Math.max(0, Math.floor(run.policy.minutes - used.minutes)),
           attemptsLeft: Math.max(0, run.policy.attempts - used.attempts), nodesLeft: Math.max(0, run.policy.nodes - used.nodes) },

@@ -130,6 +130,31 @@ test('详情展示节点依赖、诊断、审查、验收和通知事实，不�
   expect(screen.queryByRole('button', { name: /继续|恢复/ })).toBeNull();
 });
 
+test.each([
+  ['accept', '通过', 0], ['correct', '要求修正', 1], ['handoff', '请求换人', 0], ['split', '要求拆分', 2], ['owner', '请主人处理', 0],
+] as const)('负责人决定 %s 以纯文字显示，增量胶囊只读且不提供续跑能力', (action, label, count) => {
+  window.xa = fixtureBridge();
+  const reason = '<img src=x onerror=alert(1)> 请复核';
+  render(<AutopilotDetail run={run({ active: false, state: 'needs_owner', reason: '等待核对已保存制品。',
+    leadReview: { decision: { action, at: '2026-10-27T06:00:00Z', reason, capsuleCount: count } } })} close={() => {}} notify={() => {}} />);
+  const section = screen.getByRole('region', { name: '负责人复审' });
+  expect(section.textContent).toContain('负责人决定：' + label);
+  expect(section.textContent).toContain(reason); expect(section.querySelector('img')).toBeNull();
+  if (count) {
+    expect(section.textContent).toContain(`已保存 ${count} 份增量执行胶囊`);
+    expect(section.textContent).toContain('尚未授权续跑');
+  } else expect(section.textContent).not.toContain('已保存');
+  expect(screen.queryByRole('button', { name: /继续|导出|提交|采用|恢复/ })).toBeNull();
+});
+
+test('新流程暂无负责人决定明确等待；旧 View 不伪造新流程决定区', () => {
+  window.xa = fixtureBridge();
+  const component = render(<AutopilotDetail run={run({ leadReview: { decision: null } })} close={() => {}} notify={() => {}} />);
+  expect(screen.getByRole('region', { name: '负责人复审' }).textContent).toContain('尚无负责人决定');
+  component.rerender(<AutopilotDetail run={run()} close={() => {}} notify={() => {}} />);
+  expect(screen.queryByRole('region', { name: '负责人复审' })).toBeNull();
+});
+
 test('停止必须二次确认，成功保留证据，失败显示中文原因', async () => {
   const stop = vi.fn(async () => {}), notify = vi.fn(); window.xa = fixtureBridge({ autopilotStop: stop });
   render(<AutopilotDetail run={run()} close={() => {}} notify={notify} />);

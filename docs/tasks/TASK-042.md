@@ -1,7 +1,7 @@
 # TASK-042 — 负责人决定与待处理胶囊的只读展示
 
 - handoff_contract: `1`
-- status: `DRAFT`
+- status: `PASSED`
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-027[PASSED|PASSED_WITH_NOTES], TASK-041[PASSED|PASSED_WITH_NOTES]`

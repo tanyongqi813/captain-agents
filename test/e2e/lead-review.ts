@@ -4,6 +4,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { _electron } from 'playwright-core';
 import { context, until, upgradeAutopilotFixture } from '../helpers.ts';
+import { writeJson } from '../../src/core/fsx.ts';
+import { parseRun } from '../../src/core/autopilot.ts';
+import { loadHandoffFiles } from '../../src/core/task-plan.ts';
+import { compileLeadCapsules } from '../../src/core/lead-capsule.ts';
+import { LEAD_REVIEW_OPEN, LEAD_REVIEW_CLOSE, parseLeadReview } from '../../src/core/lead-review.ts';
 
 test('真实窗口：显式负责人流程保存新协议记录，浅深窄截图并可整单停止', { timeout: 90_000 }, async t => {
   const c = await context(t);
@@ -54,6 +59,33 @@ test('真实窗口：显式负责人流程保存新协议记录，浅深窄截�
     await detail.getByRole('button', { name: '停止无人看守', exact: true }).click();
     await detail.getByRole('button', { name: '确认停止', exact: true }).click();
     await until(async () => JSON.parse(await readFile(join(c.home, 'autopilots', id, 'run.json'), 'utf8')), r => r.state === 'stopped', 10_000);
+    assert.equal(await c.git(['rev-parse', 'HEAD']), before);
+    // 已停止的临时运行追加经过核心校验的替身复审结果；不启动任何模型，也不改项目文档。
+    const file = join(c.home, 'autopilots', id, 'run.json'), saved = JSON.parse(await readFile(file, 'utf8'));
+    const origin = saved.flow.lead.origin, candidate = saved.flow.accepted, token = 'fixture-review', at = new Date().toISOString();
+    const binding = { candidate, capsule: origin.fingerprint };
+    const replyText = LEAD_REVIEW_OPEN + '\n' + JSON.stringify({ schema: 1, action: 'correct', reason: '只修正本轮问题。',
+      ...binding, change: { goal: '保留成果并修正', acceptance: ['定向验证通过'] } }) + '\n' + LEAD_REVIEW_CLOSE;
+    const parsed = parseLeadReview(replyText, binding); assert.ok(parsed.ok);
+    const compilation = compileLeadCapsules({ files: await loadHandoffFiles(c.repo), taskId: saved.taskId,
+      currentAttempt: origin.attempt, candidate, replyText, findingIds: ['F-01'] });
+    saved.flow.reviews.push({ token, node: saved.taskId, at, candidate, jobs: ['fixture-review'], verdict: 'changes' });
+    saved.flow.lead.decisions.push({ token, node: saved.taskId, at, jobs: ['fixture-review'], reply: parsed.reply, compilation });
+    saved.state = 'needs_owner'; saved.ownerCode = 'owner_requested'; saved.reason = '负责人已保存增量胶囊，等待主人核对。';
+    await writeJson(file, parseRun(saved, id));
+    const review = page.getByRole('region', { name: '负责人复审', exact: true });
+    await review.getByText(/已保存 1 份增量执行胶囊/).waitFor();
+    assert.match(await review.textContent() ?? '', /负责人决定：要求修正/);
+    assert.match(await review.textContent() ?? '', /尚未授权续跑/);
+    assert.equal(await review.getByRole('button').count(), 0);
+    const summary = (await page.evaluate(() => window.xa.getView())).autopilots!.find(r => r.id === id)!.leadReview;
+    assert.equal(summary?.decision?.capsuleCount, 1);
+    assert.doesNotMatch(JSON.stringify(summary), /"origin"|"token"|"compilation"/);
+    for (const variant of [{ name: 'light', width: 1280, scheme: 'light' }, { name: 'dark', width: 1280, scheme: 'dark' }, { name: 'narrow', width: 900, scheme: 'light' }] as const) {
+      await page.setViewportSize({ width: variant.width, height: 900 }); await page.emulateMedia({ colorScheme: variant.scheme });
+      await review.scrollIntoViewIfNeeded();
+      await page.screenshot({ animations: 'disabled', path: resolve(`output/playwright/lead-decision-${variant.name}.png`) });
+    }
     assert.equal(await c.git(['rev-parse', 'HEAD']), before);
   } finally { await app.close(); }
 });

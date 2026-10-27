@@ -15,6 +15,32 @@ import { ensureHome } from '../src/core/paths.ts';
 import { addProject } from '../src/core/project.ts';
 import { derive } from '../app/renderer/lib/board.ts';
 import { buildView } from '../src/core/view.ts';
+import { loadHandoffFiles } from '../src/core/task-plan.ts';
+import { compileLeadCapsules } from '../src/core/lead-capsule.ts';
+import { LEAD_REVIEW_OPEN, LEAD_REVIEW_CLOSE, parseLeadReview } from '../src/core/lead-review.ts';
+import type { LeadReviewAction } from '../src/core/lead-review.ts';
+
+async function recordDecision(run: AutopilotRun, action: LeadReviewAction, reason: string) {
+  const origin = run.flow!.lead!.origin, candidate = run.flow!.accepted, number = run.flow!.reviews.length + 1,
+    token = 'review-probe-' + number, at = new Date().toISOString();
+  const body = { schema: 1, action, reason, candidate, capsule: origin.fingerprint,
+    ...(action === 'correct' ? { change: { goal: '只修本轮问题', acceptance: ['验证通过'] } } : {}),
+    ...(action === 'split' ? { nodes: [
+      { id: 'one', title: '第一步', goal: '修正', acceptance: '验证通过', deps: [] },
+      { id: 'two', title: '第二步', goal: '复核', acceptance: '验证通过', deps: ['one'] },
+    ] } : {}) };
+  const replyText = LEAD_REVIEW_OPEN + '\n' + JSON.stringify(body) + '\n' + LEAD_REVIEW_CLOSE;
+  const parsed = parseLeadReview(replyText, { candidate, capsule: origin.fingerprint });
+  assert.ok(parsed.ok);
+  const compilation = action === 'correct' || action === 'split' ? compileLeadCapsules({ files: await loadHandoffFiles(run.repo),
+    taskId: run.taskId, currentAttempt: origin.attempt, candidate, replyText, findingIds: ['F-' + String(number).padStart(2, '0')] }) : undefined;
+  return updateAutopilot(run.id, current => {
+    current.flow!.reviews.push({ token, node: run.taskId, at, candidate, jobs: ['review-probe'],
+      verdict: action === 'accept' ? 'pass' : action === 'correct' || action === 'split' ? 'changes' : 'unclear' });
+    current.flow!.lead!.decisions.push({ token, node: run.taskId, at, jobs: ['review-probe'], reply: parsed.reply, ...(compilation ? { compilation } : {}) });
+    advance(current, { kind: 'owner', code: 'owner_requested', note: '实际暂停说明：增量制品等待主人核对。' });
+  });
+}
 
 const input: AutopilotInput = { project: 'demo', taskId: 'TASK-001', writer: 'codex:high', reviewer: 'codex-luna:high',
   policy: 'standard', permission: 'workspace-write', network: false };
@@ -118,4 +144,50 @@ test('自治节点仅从普通看板移除，已结束任务历史仍保留', as
   const view = await buildView(); const columns = derive(view);
   assert.equal(columns.attention.length, 0); assert.equal(columns.history.length, 1);
   assert.deepEqual(view.jobs[0].autopilot, { run: run.id }); assert.doesNotMatch(JSON.stringify(view.jobs[0]), /hidden-token/);
+});
+
+for (const action of ['accept', 'correct', 'handoff', 'split', 'owner'] as const) test(`只读负责人摘要：${action} 只输出脱敏决定和数量，读取不改登记或通知`, async t => {
+  const c = await world(t), run = await createAutopilot({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'],
+    reviewer: 'codex-luna:high', leadReview: true });
+  await recordDecision(run, action, '请复核 <img src=x onerror=alert(1)>，' + c.repo + '/private.log；/private/alien dir/secret.txt；C:\\alien dir\\secret.txt；sk-review-secret-123456789。');
+  const file = join(c.home, 'autopilots', run.id, 'run.json'), before = await readFile(file, 'utf8'), dirs = await readdir(c.home);
+  const result = await autopilotView(), row = result.autopilots.find(r => r.id === run.id)!;
+  assert.equal(row.leadReview!.decision!.action, action);
+  assert.equal(row.leadReview!.decision!.capsuleCount, action === 'correct' ? 1 : action === 'split' ? 2 : 0);
+  assert.match(row.reason!, /实际暂停说明/);
+  const summary = JSON.stringify(row.leadReview);
+  assert.doesNotMatch(summary, /private\.log|alien|secret\.txt|sk-review-secret|"token"|"origin"|"compilation"|"fingerprint"/);
+  assert.ok(!summary.includes(c.repo)); assert.ok(row.leadReview!.decision!.reason.length <= 360);
+  assert.equal(await readFile(file, 'utf8'), before); assert.deepEqual(await readdir(c.home), dirs);
+});
+
+test('负责人摘要：暂无决定不假装通过，旧记录保持空摘要，损坏记录不展示决定', async t => {
+  const c = await world(t), run = await createAutopilot({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'],
+    reviewer: 'codex-luna:high', leadReview: true });
+  assert.deepEqual((await autopilotView()).autopilots[0].leadReview, { decision: null });
+  await recordDecision(run, 'owner', '请主人复核。');
+  const file = join(c.home, 'autopilots', run.id, 'run.json'), raw = JSON.parse(await readFile(file, 'utf8'));
+  raw.flow.lead.decisions[0].reply.binding.candidate = 'b'.repeat(64);
+  await writeFile(file, JSON.stringify(raw));
+  const broken = await autopilotView(); assert.equal(broken.autopilots.length, 0); assert.match(broken.autopilotProblem!, /无法读取/);
+  await writeFile(file, JSON.stringify({ ...raw, flow: undefined }));
+  // 旧登记没有新协议时沿用旧语义，不凭残留原因码创造负责人决定。
+  const legacy = await autopilotView(); assert.equal(legacy.autopilots[0].leadReview, null);
+});
+
+test('负责人摘要脱敏替换后仍有长度上限，不因大量短路径膨胀', async t => {
+  await world(t);
+  const run = await createAutopilot({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'], reviewer: 'codex-luna:high', leadReview: true });
+  await recordDecision(run, 'owner', '/，'.repeat(190));
+  const summary = (await autopilotView()).autopilots[0].leadReview!.decision!;
+  assert.ok(summary.reason.length <= 360); assert.ok(summary.reason.includes('路径已隐去'));
+});
+
+test('负责人摘要取最后一份已验证决定，不把历史通过当成最新结论', async t => {
+  await world(t);
+  const run = await createAutopilot({ project: 'demo', taskId: 'TASK-001', who: ['codex:high'], reviewer: 'codex-luna:high', leadReview: true });
+  const first = await recordDecision(run, 'accept', '历史通过。');
+  await recordDecision(first, 'owner', '最新仍需主人处理。');
+  const summary = (await autopilotView()).autopilots[0].leadReview!.decision!;
+  assert.equal(summary.action, 'owner'); assert.equal(summary.reason, '最新仍需主人处理。');
 });

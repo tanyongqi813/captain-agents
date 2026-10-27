@@ -19,6 +19,7 @@ const notificationNames = { pending: '已排队（需连接飞书且应用在线
 const nodeNames: Record<string, string> = { pending: '待执行', running: '执行中', passed: '已通过', failed: '未通过', split: '已细拆' };
 const outcomeNames: Record<string, string> = { done: '执行结束', failed: '未完成', blocked: '被拦下', pass: '通过', changes: '要求修改', unclear: '结论不明确' };
 const actionNames: Record<string, string> = { continue: '保留成果续做', retry: '从已确认起点重试', split: '细拆子任务', verify: '转验收', owner: '请主人决定' };
+const leadActionNames = { accept: '通过', correct: '要求修正', handoff: '请求换人', split: '要求拆分', owner: '请主人处理' };
 
 export function AutopilotStartDialog({ view, pool, project, taskId, close, started }: {
   view: View; pool: Candidate[]; project: string; taskId: string; close(): void; started(id: string): void;
@@ -120,6 +121,16 @@ export function AutopilotDetail({ run, close, notify, openJob }: { run: ViewAuto
     {run.reason && run.state !== 'needs_owner' && <p role="status">{run.reason}</p>}
     <p>执行者：{run.writer} · 审查者：{run.reviewer ?? '旧记录未选择'} · {run.network ? '允许联网' : '不联网'}</p>
     <p>剩余预算：{run.budget.minutesLeft} 分钟 / {run.budget.attemptsLeft} 次 AI 调用 / {run.budget.nodesLeft} 个新节点</p>
+    {run.leadReview && <section aria-label="负责人复审">
+      <h3>负责人复审</h3>
+      {run.leadReview.decision ? <>
+        <p>负责人决定：{leadActionNames[run.leadReview.decision.action]} · {fmtTime(run.leadReview.decision.at, true)}</p>
+        <p>{run.leadReview.decision.reason}</p>
+        {run.leadReview.decision.capsuleCount > 0 && <p className="notice notice-warn">
+          已保存 {run.leadReview.decision.capsuleCount} 份增量执行胶囊。尚未授权续跑，不会自动提交或继续派发。
+        </p>}
+      </> : <p className="faint">尚无负责人决定，等待本轮复审。</p>}
+    </section>}
     {run.notification && <p role="status">飞书通知：{notificationNames[run.notification]}</p>}
     <h3>步骤与依赖</h3><ul>{run.nodes.map(node => <li key={node.id}>{node.id}{node.title ? ` · ${node.title}` : ''}：{nodeNames[node.state] ?? node.state}
       {node.parent ? `（拆自 ${node.parent}）` : ''}{node.deps.length ? ` · 前置 ${node.deps.join('、')}` : ''}</li>)}</ul>

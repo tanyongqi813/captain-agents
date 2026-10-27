@@ -9,6 +9,7 @@ import type { DashboardSlice } from './dashboard.ts';
 import type { ChannelMessage, ReviewItem, TeamPhase, TeamReason, TeamState } from './team.ts';
 import type { TaskPlan } from './task-plan.ts';
 import type { AutopilotState } from './autopilot.ts';
+import type { LeadReviewAction } from './lead-review.ts';
 
 export type ViewAutopilot = {
   id: string; project: string; taskId: string; state: AutopilotState; active: boolean; managed: boolean;
@@ -20,6 +21,8 @@ export type ViewAutopilot = {
   reviews: { node: string; at: string; verdict: string | null; jobs: string[] }[];
   verification: { ok: boolean; at: string; steps: { ok: boolean; summary: string }[] } | null;
   patch: string | null;
+  // 只带已验证的最后决定摘要；不包含原胶囊、令牌、候选绑定或执行能力。旧 View 可缺省。
+  leadReview?: { decision: { action: LeadReviewAction; at: string; reason: string; capsuleCount: number } | null } | null;
   notification: 'pending' | 'retry' | 'delivered' | 'handled' | 'expired' | 'paused' | 'exhausted' | 'unknown' | null;
 };
 
