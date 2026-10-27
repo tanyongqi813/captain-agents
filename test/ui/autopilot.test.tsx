@@ -43,6 +43,39 @@ test('联网设置变化使旧确认失效；不能把已勾选确认沿用到�
   expect(screen.getByRole('alert').textContent).toContain('联网设置已经变化');
 });
 
+test('负责人流程默认关闭；切换清空负责人及授权，只提交可选布尔开关', async () => {
+  const start = vi.fn(async () => '1019-1200-auto'); window.xa = fixtureBridge({ autopilotStart: start });
+  render(<AutopilotStartDialog view={fixtureView()} pool={pool} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  const mode = screen.getByRole('checkbox', { name: '使用负责人复审流程' });
+  expect(mode.getAttribute('aria-checked')).toBe('false');
+  fill(); fireEvent.click(mode);
+  expect((screen.getByRole('combobox', { name: '独立审查者' }) as HTMLSelectElement).value).toBe('');
+  expect((screen.getByRole('combobox', { name: '审查强度' }) as HTMLSelectElement).value).toBe('');
+  expect(screen.getByRole('checkbox', { name: '允许修改专用副本' }).getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('checkbox', { name: '确认联网快照' }).getAttribute('aria-checked')).toBe('false');
+  expect((screen.getByRole('button', { name: '启动无人看守' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole('dialog').textContent).toContain('不会自动提交或继续派发');
+  fill(); fireEvent.click(screen.getByRole('button', { name: '启动无人看守' }));
+  await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+  expect(start.mock.calls[0]).toEqual([{ project: 'demo', taskId: 'TASK-001', writer: 'codex:high', reviewer: 'codex-luna:high', policy: 'standard', permission: 'workspace-write', network: false, leadReview: true }]);
+});
+
+test('新流程仅显示受信独立负责人；候选移除后不可启动，退回旧模式不保留确认', () => {
+  window.xa = fixtureBridge();
+  const mixed = [...pool, { who: 'deepseek', name: 'DeepSeek', model: '测试模型', efforts: ['high' as const], fast: false }];
+  const component = render(<AutopilotStartDialog view={fixtureView()} pool={mixed} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  fireEvent.click(screen.getByRole('checkbox', { name: '使用负责人复审流程' })); fill();
+  const reviewer = screen.getByRole('combobox', { name: '独立审查者' });
+  expect(within(reviewer).queryByRole('option', { name: /DeepSeek/ })).toBeNull();
+  expect(within(reviewer).queryByRole('option', { name: /Codex ·/ })).toBeNull();
+  component.rerender(<AutopilotStartDialog view={fixtureView()} pool={mixed.filter(p => p.who !== 'codex-luna')} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  expect((screen.getByRole('button', { name: '启动无人看守' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole('alert').textContent).toContain('没有独立且受信');
+  fireEvent.click(screen.getByRole('checkbox', { name: '使用负责人复审流程' }));
+  expect(within(reviewer).getByRole('option', { name: /DeepSeek/ })).toBeTruthy();
+  expect(screen.getByRole('checkbox', { name: '允许修改专用副本' }).getAttribute('aria-checked')).toBe('false');
+});
+
 test('启动中防重复点击，失败留在对话框；更换选手必须重新选强度', async () => {
   let reject: (error: Error) => void = () => {};
   const start = vi.fn(() => new Promise<string>((_, r) => { reject = r; })); window.xa = fixtureBridge({ autopilotStart: start });

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { View, ViewAutopilot } from '../../../src/core/view-types.ts';
 import type { Effort } from '../../../src/core/roster.ts';
+import { isWho, vendorOf } from '../../../src/core/roster.ts';
 import { effortNames } from '../../../src/core/policy.ts';
 import { stateNames } from '../../../src/core/autopilot-state.ts';
 import { Button, CheckDot, Chip, EmptyState, Modal, Select, SettingGroup, SettingRow } from '../ui/index.ts';
@@ -25,22 +26,25 @@ export function AutopilotStartDialog({ view, pool, project, taskId, close, start
   const [writer, setWriter] = useState(''), [reviewer, setReviewer] = useState('');
   const [we, setWe] = useState(''), [re, setRe] = useState('');
   const [wf, setWf] = useState(false), [rf, setRf] = useState(false);
+  const [leadReview, setLeadReview] = useState(false);
   const [permission, setPermission] = useState(false), [network, setNetwork] = useState(false), [policy, setPolicy] = useState('');
   const [networkSnapshot] = useState(view.settings.networkAllowed);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const writerRow = pool.find(p => p.who === writer), reviewRow = pool.find(p => p.who === reviewer);
+  const trusted = (who: string) => isWho(who) && vendorOf(who) === 'codex';
+  const reviewerPool = pool.filter(p => p.who !== writer && (!leadReview || trusted(p.who)));
   const knownNetwork = typeof networkSnapshot === 'boolean';
   const networkChanged = networkSnapshot !== view.settings.networkAllowed;
   const ready = !!writerRow && !!reviewRow && writer !== reviewer && writerRow.efforts.includes(we as Effort)
     && reviewRow.efforts.includes(re as Effort) && !!policy && permission && network && knownNetwork && !networkChanged
-    && (!wf || writerRow.fast) && (!rf || reviewRow.fast);
+    && (!wf || writerRow.fast) && (!rf || reviewRow.fast) && (!leadReview || trusted(reviewer));
   const send = async () => {
     if (!ready || busy) return;
     setBusy(true); setError('');
     try {
       const id = await window.xa.autopilotStart({ project, taskId, writer: `${writer}:${we}${wf ? ':fast' : ''}`,
         reviewer: `${reviewer}:${re}${rf ? ':fast' : ''}`, policy: policy as AutopilotInput['policy'],
-        permission: 'workspace-write', network: networkSnapshot! });
+        permission: 'workspace-write', network: networkSnapshot!, ...(leadReview ? { leadReview: true } : {}) });
       started(id);
     } catch (e) { setError('没能启动：' + errorReason(e)); }
     finally { setBusy(false); }
@@ -50,13 +54,18 @@ export function AutopilotStartDialog({ view, pool, project, taskId, close, start
   return <Modal label={`无人看守 ${taskId}`} title={`无人看守 ${taskId}`} size="sm" onClose={() => { if (!busy) close(); }}
     footer={<><span className="faint">所有选项都需明确确认</span><span className="step"><Button size="sm" disabled={busy} onClick={close}>取消</Button>
       <Button size="sm" variant="primary" disabled={!ready || busy} onClick={() => void send()}>{busy ? '正在启动…' : '启动无人看守'}</Button></span></>}>
-    <p className="sub">执行、诊断和独立审查共用总预算。通过后仍需负责人采用补丁，不自动改主分支或规划文档。</p>
+    <p className="sub">{leadReview
+      ? '执行者按当前执行胶囊工作，由 Codex 负责人复审后验收。返工或拆分会保存增量胶囊并暂停，不会自动提交或继续派发。执行和复审共用总预算。'
+      : '执行、诊断和独立审查共用总预算。通过后仍需负责人采用补丁，不自动改主分支或规划文档。'}</p>
     <fieldset disabled={busy} className="settings">
+      <p className="crow"><CheckDot label="使用负责人复审流程" checked={leadReview} onChange={value => {
+        setLeadReview(value); setReviewer(''); setRe(''); setRf(false); setPermission(false); setNetwork(false); setError('');
+      }} />使用负责人复审流程（试用，默认关闭）</p>
       <SettingGroup>
         <SettingRow title="执行者"><Select label="执行者" value={writer} items={choices} onChange={v => { setWriter(v); setWe(''); setWf(false); }} /></SettingRow>
         <SettingRow title="执行强度"><Select label="执行强度" value={we} items={strengths(writerRow)} onChange={setWe} disabled={!writerRow} /></SettingRow>
         {writerRow?.fast && <SettingRow title="执行者快速版"><CheckDot label="执行者快速版" checked={wf} onChange={setWf} /></SettingRow>}
-        <SettingRow title="独立审查者"><Select label="独立审查者" value={reviewer} items={choices.filter(p => p.id !== writer)} onChange={v => { setReviewer(v); setRe(''); setRf(false); }} /></SettingRow>
+        <SettingRow title="独立审查者"><Select label="独立审查者" value={reviewer} items={[{ id: '', label: leadReview ? '请选择受信负责人' : '请选择选手' }, ...reviewerPool.map(p => ({ id: p.who, label: `${p.name} · ${p.model}` }))]} onChange={v => { setReviewer(v); setRe(''); setRf(false); }} /></SettingRow>
         <SettingRow title="审查强度"><Select label="审查强度" value={re} items={strengths(reviewRow)} onChange={setRe} disabled={!reviewRow} /></SettingRow>
         {reviewRow?.fast && <SettingRow title="审查者快速版"><CheckDot label="审查者快速版" checked={rf} onChange={setRf} /></SettingRow>}
         <SettingRow title="总预算"><Select label="总预算" value={policy} items={presets} onChange={setPolicy} /></SettingRow>
@@ -66,6 +75,7 @@ export function AutopilotStartDialog({ view, pool, project, taskId, close, start
     </fieldset>
     {writer && reviewer === writer && <p role="alert">执行者和审查者必须是不同选手。</p>}
     {pool.length < 2 && <p className="notice notice-warn">请先在设置中启用至少两位可用选手，才能进行独立审查。</p>}
+    {leadReview && !reviewerPool.length && <p role="alert" className="notice notice-warn">当前没有独立且受信的 Codex 负责人，请先在设置中启用；不会自动更换通道。</p>}
     {error && <p role="alert" className="notice notice-bad">{error}</p>}
     {networkChanged && <p role="alert" className="notice notice-warn">联网设置已经变化，请关闭后重新确认。</p>}
   </Modal>;

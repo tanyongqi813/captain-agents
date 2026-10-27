@@ -51,6 +51,31 @@ test('自治桥只返回编号并防并发启动；刷新失败不能把已启�
   assert.deepEqual(received, { project: 'demo', taskId: 'TASK-001', who: ['codex:high'], reviewer: 'codex-luna:high', policy: 'standard', ro: false, expectedNetwork: false });
 });
 
+test('负责人桌面开关只接受布尔值，非受信通道与未知字段在启动前拒绝', async () => {
+  let calls = 0; let received: unknown;
+  const bridge = autopilotActions(async () => {}, { start: async options => { calls++; received = options; return { id: '1019-1200-auto' } as AutopilotRun; }, stop: async () => ({} as AutopilotRun) });
+  for (const leadReview of ['true', 1, null, undefined, {}]) await assert.rejects(bridge.start([{ ...input, leadReview }]));
+  await assert.rejects(bridge.start([{ ...input, leadReview: true, reviewer: 'deepseek:high' }]), /受信/);
+  await assert.rejects(bridge.start([{ ...input, leadReview: true, prompt: '越权' }]));
+  assert.equal(calls, 0);
+  await bridge.start([{ ...input, leadReview: true }]);
+  assert.equal(calls, 1); assert.equal((received as { leadReview: boolean }).leadReview, true);
+  await bridge.start([{ ...input, leadReview: false }]);
+  assert.equal((received as { leadReview: boolean }).leadReview, false);
+});
+
+test('桌面新模式由真实核心绑定负责人及当前胶囊，不静默升级旧模式', async t => {
+  await world(t);
+  const bridge = autopilotActions(async () => {}, { start: options => startAutopilot(options, { launch: async () => {} }), stop: async () => ({} as AutopilotRun) });
+  await assert.rejects(bridge.start([{ ...input, leadReview: true, reviewer: input.writer }]));
+  assert.equal((await listAutopilots()).runs.length, 0);
+  const id = await bridge.start([{ ...input, leadReview: true }]);
+  const run = (await listAutopilots()).runs.find(r => r.id === id)!;
+  assert.equal(run.flow?.version, 2);
+  assert.equal(run.flow?.lead?.authority, input.reviewer);
+  assert.equal(run.flow?.lead?.origin.taskId, input.taskId);
+});
+
 test('真实核心仍拒绝未知选手、过期联网确认及同选手自审；合法桥建立闭环且重复任务不新建', async t => {
   await world(t);
   const bridge = autopilotActions(async () => {}, { start: options => startAutopilot(options, { launch: async () => {} }), stop: async () => ({} as AutopilotRun) });
