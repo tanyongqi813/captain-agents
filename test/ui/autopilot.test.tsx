@@ -76,6 +76,34 @@ test('新流程仅显示受信独立负责人；候选移除后不可启动，�
   expect(screen.getByRole('checkbox', { name: '允许修改专用副本' }).getAttribute('aria-checked')).toBe('false');
 });
 
+test('动态负责人按后台通道身份显示和启动，不按 who 前缀猜测；目录变化立即失效', async () => {
+  const start = vi.fn(async () => '1019-1200-auto'); window.xa = fixtureBridge({ autopilotStart: start });
+  const view = fixtureView(), dynamic = 'codex-6-review-probe', imposter = 'codex-untrusted-probe';
+  const row = (who: string) => ({ who, model: who, shown: who, description: null, efforts: ['high' as const], fast: false,
+    kept: true, builtin: false, manual: true, fresh: false, gone: false });
+  view.models.channels = [
+    { channel: 'codex', name: 'Codex', icon: 'codex', discoverable: true, at: null, error: null, models: [row(dynamic)] },
+    { channel: 'cursor', name: 'Cursor', icon: 'cursor', discoverable: true, at: null, error: null, models: [row(imposter)] },
+  ];
+  const mixed = [...pool, ...[dynamic, imposter].map(who => ({ who, model: who, name: who, efforts: ['high' as const], fast: false }))];
+  const component = render(<AutopilotStartDialog view={view} pool={mixed} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  fireEvent.click(screen.getByRole('checkbox', { name: '使用负责人复审流程' }));
+  const reviewers = screen.getByRole('combobox', { name: '独立审查者' });
+  expect(within(reviewers).getByRole('option', { name: new RegExp(dynamic) })).toBeTruthy();
+  expect(within(reviewers).queryByRole('option', { name: new RegExp(imposter) })).toBeNull();
+  fill();
+  fireEvent.change(reviewers, { target: { value: dynamic } });
+  fireEvent.change(screen.getByRole('combobox', { name: '审查强度' }), { target: { value: 'high' } });
+  const button = screen.getByRole('button', { name: '启动无人看守' });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  component.rerender(<AutopilotStartDialog view={{ ...view, models: { at: null, channels: [] } }} pool={mixed} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  component.rerender(<AutopilotStartDialog view={view} pool={mixed} project="demo" taskId="TASK-001" close={() => {}} started={() => {}} />);
+  fireEvent.click(button);
+  await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+  expect(start.mock.calls[0]).toEqual([expect.objectContaining({ reviewer: dynamic + ':high', leadReview: true })]);
+});
+
 test('启动中防重复点击，失败留在对话框；更换选手必须重新选强度', async () => {
   let reject: (error: Error) => void = () => {};
   const start = vi.fn(() => new Promise<string>((_, r) => { reject = r; })); window.xa = fixtureBridge({ autopilotStart: start });

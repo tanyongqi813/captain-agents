@@ -31,7 +31,12 @@ export function AutopilotStartDialog({ view, pool, project, taskId, close, start
   const [networkSnapshot] = useState(view.settings.networkAllowed);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const writerRow = pool.find(p => p.who === writer), reviewRow = pool.find(p => p.who === reviewer);
-  const trusted = (who: string) => isWho(who) && vendorOf(who) === 'codex';
+  const trusted = (who: string) => {
+    // 动态模型身份来自后台当前目录；旧 View 没有该条目时仅兼容内置名单，不能按名字猜通道。
+    const channel = view.models?.channels.find(c => c.models.some(m => m.who === who));
+    if (channel) return channel.channel === 'codex' && channel.models.some(m => m.who === who && m.kept);
+    return isWho(who) && vendorOf(who) === 'codex';
+  };
   const reviewerPool = pool.filter(p => p.who !== writer && (!leadReview || trusted(p.who)));
   const knownNetwork = typeof networkSnapshot === 'boolean';
   const networkChanged = networkSnapshot !== view.settings.networkAllowed;

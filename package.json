@@ -19,7 +19,7 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p app/main/tsconfig.json && tsc -p app/preload/tsconfig.json && tsc -p app/renderer/tsconfig.json",
     "test": "node --test --test-timeout=120000 \"test/*.test.ts\"",
     "test:ui": "vitest run",
-    "test:e2e": "node --test test/e2e/smoke.ts",
+    "test:e2e": "node --test test/e2e/smoke.ts test/e2e/lead-review.ts",
     "verify": "npm run typecheck && npm test && npm run test:ui && npm run build && npm run test:e2e",
     "icon": "electron scripts/make-icon.mjs",
     "update:key": "node scripts/release/generate-update-key.mjs",

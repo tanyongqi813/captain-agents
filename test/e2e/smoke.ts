@@ -9,7 +9,7 @@ import { writeJson } from '../../src/core/fsx.ts';
 import { addComment } from '../../src/core/comments.ts';
 import type { Job } from '../../src/core/job.ts';
 import type { Notice } from '../../app/main/notifications.ts';
-import { context, until } from '../helpers.ts';
+import { context, until, upgradeAutopilotFixture } from '../helpers.ts';
 import { advance, createAutopilot, readAutopilot, updateAutopilot } from '../../src/core/autopilot.ts';
 import { alive } from '../../src/core/platform.ts';
 
@@ -73,6 +73,7 @@ test('真实窗口无人看守：明确启动、查看、整单停止、主人�
     await writeFile(join(c.repo, '.gitignore'), '.worktrees/\n');
     await writeFile(join(c.repo, 'docs/TASK_LIST.md'), '# 任务\n\n| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 |\n|---|---|---|---|---|---|\n| [TASK-001](tasks/TASK-001.md) | 窗口验收 | READY | P1 | High | 无 |\n');
     await writeFile(join(c.repo, 'docs/tasks/TASK-001.md'), '# TASK-001\n\n- 状态：`READY`\n- 优先级：`P1`\n- 难度等级：`High`\n- 前置任务：无\n\n## 业务结果\n\n仅运行替身。\n\n## 验收标准\n\n1. 通过测试。\n');
+    await upgradeAutopilotFixture(c.repo);
     await c.git(['add', '.']); await c.git(['commit', '-m', 'window fixture']);
     const registered = await c.add(); assert.equal(registered.code, 0, registered.stderr);
     const env = Object.fromEntries(Object.entries(c.env).filter((e): e is [string, string] => typeof e[1] === 'string'));
