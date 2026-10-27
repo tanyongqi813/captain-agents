@@ -4,7 +4,7 @@ import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { context, exec } from './helpers.ts';
-import { MAX_ACCEPTANCE_ITEMS, MAX_LIST_BYTES, MAX_TASKS, parseTaskSpec, readTaskPlan, resolveTaskSpec } from '../src/core/task-plan.ts';
+import { CAPSULE_SECTIONS, MAX_ACCEPTANCE_ITEMS, MAX_LIST_BYTES, MAX_TASKS, TASK_SECTIONS, capsuleFingerprint, parseDependencies, parseTaskSpec, readDispatchCapsule, readHandoffReport, readTaskPlan, resolveTaskSpec, sourceAnchors } from '../src/core/task-plan.ts';
 import { addProject } from '../src/core/project.ts';
 import { ensureHome } from '../src/core/paths.ts';
 import { buildView } from '../src/core/view.ts';
@@ -458,4 +458,251 @@ test('打开 Task Spec：spec 换成指向仓库外的符号链接后拒绝打�
   await rm(join(repo, 'docs', 'tasks', 'TASK-001.md'));
   await symlink(outside, join(repo, 'docs', 'tasks', 'TASK-001.md'));
   await assert.rejects(resolveTaskSpec('demo', 'docs/tasks/TASK-001.md'), /仓库外|没有 .*这份 Task Spec|找不到/);
+});
+
+function contractSpec(id: string, status: string, deps: string, attempt = 'none'): string {
+  return [`# ${id} — 契约任务`, '', '- handoff_contract: `1`', `- status: \`${status}\``, '- priority: `P1`', '- difficulty: `Medium`',
+    `- dependencies: \`${deps}\``, `- current_attempt: \`${attempt}\``, '', '## 业务结果', '', '办成。', '', '## 验收标准', '', '1. 办成。', ''].join('\n');
+}
+
+test('契约 1 的状态、依赖和当前执行指针按同一套规则进入可执行队列', async t => {
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([
+      row('TASK-001', '底层', 'PASSED'),
+      row('TASK-002', '上层', 'READY', 'TASK-001[PASSED]'),
+    ]),
+    'docs/tasks/TASK-001.md': contractSpec('TASK-001', 'PASSED', 'none'),
+    'docs/tasks/TASK-002.md': contractSpec('TASK-002', 'READY', 'TASK-001[PASSED]', '01'),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: c.repo });
+  assert.deepEqual(plan.ready, ['TASK-002']);
+  assert.deepEqual(plan.tasks[1].deps, [{ id: 'TASK-001', accepted: ['PASSED'] }]);
+  assert.equal(plan.tasks[1].currentAttempt, '01');
+  assert.equal(plan.tasks[1].contract, '1');
+  assert.deepEqual(plan.diagnostics, []);
+});
+
+test('dependencies 写 none 时当成没有前置任务，不拦派发', async t => {
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '单独', 'READY')]),
+    'docs/tasks/TASK-001.md': contractSpec('TASK-001', 'READY', 'none', '01'),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: c.repo });
+  assert.deepEqual(plan.tasks[0].deps, []);
+  assert.deepEqual(plan.ready, ['TASK-001']);
+});
+
+test('只接受 PASSED_WITH_NOTES 时，前置任务停在 PASSED 不能派发', async t => {
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '底层', 'PASSED'), row('TASK-002', '上层', 'READY')]),
+    'docs/tasks/TASK-001.md': contractSpec('TASK-001', 'PASSED', 'none'),
+    'docs/tasks/TASK-002.md': contractSpec('TASK-002', 'READY', 'TASK-001[PASSED_WITH_NOTES]'),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: c.repo });
+  assert.deepEqual(plan.ready, []);
+  assert.match(plan.tasks[1].problems.join('\n'), /尚未通过/);
+});
+
+test('旧写法里的“已通过”算 PASSED；没写通过状态的句子不猜', async t => {
+  const accepted = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '底层', 'PASSED'), row('TASK-002', '上层', 'READY')]),
+    'docs/tasks/TASK-001.md': specText({ status: 'PASSED' }),
+    'docs/tasks/TASK-002.md': specText({ deps: 'TASK-001 已通过' }),
+  });
+  assert.deepEqual((await readTaskPlan({ name: 'demo', repo: accepted.repo })).ready, ['TASK-002']);
+  const vague = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '底层', 'PASSED'), row('TASK-002', '上层', 'READY')]),
+    'docs/tasks/TASK-001.md': specText({ status: 'PASSED' }),
+    'docs/tasks/TASK-002.md': specText({ deps: 'TASK-001 做完再说' }),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: vague.repo });
+  assert.deepEqual(plan.ready, []);
+  assert.match(plan.tasks[1].problems.join('\n'), /前置任务/);
+});
+
+test('机器诊断给出稳定编号：未知状态、含糊状态和循环依赖', async t => {
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([
+      row('TASK-001', '甲', 'READY', 'TASK-002 PASSED'),
+      row('TASK-002', '乙', 'WAITING_REVIEW', 'TASK-001 PASSED'),
+      row('TASK-003', '丙', 'WIP'),
+    ]),
+    'docs/tasks/TASK-001.md': specText({ deps: 'TASK-002 PASSED' }),
+    'docs/tasks/TASK-002.md': specText({ status: 'WAITING_REVIEW', deps: 'TASK-001 PASSED' }),
+    'docs/tasks/TASK-003.md': specText({ status: 'WIP' }),
+  });
+  const report = await readHandoffReport(c.repo);
+  assert.equal(report.contractVersion, 1);
+  assert.ok(report.diagnostics.some(item => item.code === 'UNKNOWN_STATUS' && item.taskId === 'TASK-003'));
+  assert.ok(report.diagnostics.some(item => item.code === 'AMBIGUOUS_STATUS' && item.taskId === 'TASK-002'));
+  assert.ok(report.diagnostics.some(item => item.code === 'DEPENDENCY_CYCLE'));
+  assert.deepEqual(report.dispatchable, []);
+});
+
+test('非 READY 只因前置未通过时不报 error，READY 仍被阻断；未知依赖和循环照旧阻断', async t => {
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([
+      row('TASK-001', '底层', 'DRAFT'),
+      row('TASK-002', '等待中', 'DRAFT', 'TASK-001 PASSED'),
+      row('TASK-003', '可执行', 'READY', 'TASK-001 PASSED'),
+      row('TASK-004', '悬空', 'DRAFT', 'TASK-999 PASSED'),
+      row('TASK-005', '环甲', 'DRAFT', 'TASK-006 PASSED'),
+      row('TASK-006', '环乙', 'DRAFT', 'TASK-005 PASSED'),
+    ]),
+    'docs/tasks/TASK-001.md': specText({ status: 'DRAFT' }),
+    'docs/tasks/TASK-002.md': specText({ status: 'DRAFT', deps: 'TASK-001 PASSED' }),
+    'docs/tasks/TASK-003.md': specText({ deps: 'TASK-001 PASSED' }),
+    'docs/tasks/TASK-004.md': specText({ status: 'DRAFT', deps: 'TASK-999 PASSED' }),
+    'docs/tasks/TASK-005.md': specText({ status: 'DRAFT', deps: 'TASK-006 PASSED' }),
+    'docs/tasks/TASK-006.md': specText({ status: 'DRAFT', deps: 'TASK-005 PASSED' }),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: c.repo });
+  const messages = plan.diagnostics.map(item => item.message).join('\n');
+  assert.equal(plan.diagnostics.some(item => item.level === 'error' && /TASK-002/.test(item.message) && /尚未通过/.test(item.message)), false);
+  assert.match(messages, /TASK-003：前置任务 TASK-001/);
+  assert.match(messages, /未知前置任务 TASK-999/);
+  assert.match(messages, /TASK-005：循环依赖/);
+  assert.match(messages, /TASK-006：循环依赖/);
+  assert.deepEqual(plan.ready, []);
+});
+
+test('括号内终态只认 PASSED 与 PASSED_WITH_NOTES，非法、空项和重复都拒绝', async t => {
+  assert.deepEqual(parseDependencies('TASK-001[PASSED_WITH_NOTES|PASSED]'), [{ id: 'TASK-001', accepted: ['PASSED_WITH_NOTES', 'PASSED'] }]);
+  for (const deps of ['TASK-001[READY]', 'TASK-001[]', 'TASK-001[PASSED|]', 'TASK-001[PASSED|PASSED]', 'TASK-001[passed]']) {
+    assert.throws(() => parseDependencies(deps), /不合法|重复|无法识别/, deps);
+  }
+  const c = await repoWith(t, {
+    'docs/TASK_LIST.md': listTable([row('TASK-001', '底层', 'PASSED'), row('TASK-002', '上层', 'READY')]),
+    'docs/tasks/TASK-001.md': contractSpec('TASK-001', 'PASSED', 'none'),
+    'docs/tasks/TASK-002.md': contractSpec('TASK-002', 'READY', 'TASK-001[READY]'),
+  });
+  const plan = await readTaskPlan({ name: 'demo', repo: c.repo });
+  assert.deepEqual(plan.ready, []);
+  assert.match(plan.tasks[1].problems.join('\n'), /前置任务/);
+  const report = await readHandoffReport(c.repo);
+  assert.ok(report.diagnostics.some(item => item.code === 'DEPENDENCY_UNPARSEABLE' && item.taskId === 'TASK-002'));
+});
+
+// TASK-025：契约七列表 + 一份合法的当前 Capsule。dispatchable 和派发胶囊的读取边界都在这里验。
+function contractList(rows: string[][]): string {
+  return ['# 功能任务清单', '', '| ID | 标题 | 状态 | 优先级 | 难度 | 前置任务 | 当前执行 |', '|---|---|---|---|---|---|---|',
+    ...rows.map(cells => `| ${cells.join(' | ')} |`), ''].join('\n');
+}
+const contractRow = (id: string, title: string, status: string, deps = 'none', attempt = 'none') =>
+  [`[${id}](tasks/${id}.md)`, title, status, 'P1', 'Medium', deps, attempt];
+
+function legalCapsule(id: string, fields: { attempt?: string; state?: string; planning?: string; omit?: string; anchors?: string } = {}): string {
+  const attempt = fields.attempt ?? '01';
+  const heads = CAPSULE_SECTIONS.filter(name => name !== fields.omit);
+  const body = (name: string) => name === '本轮唯一目标' ? `胶囊正文：CAPSULE-ONLY-${id}。`
+    : name.startsWith('源码锚点') ? (fields.anchors ?? '1. `src/core/anchor-one.ts` — 只改这一处。')
+      : '见长期规划。';
+  return [`# Execution Capsule — ${id} / attempt-${attempt}`, '',
+    '- handoff_contract: `1`', '- capsule_schema: `2`', `- dispatch_state: \`${fields.state ?? 'READY'}\``,
+    `- planning_source: \`${fields.planning ?? `docs/tasks/${id}.md`}\``, `- task_id: \`${id}\``, `- attempt: \`${attempt}\``,
+    '- revision_reason: `initial`', '- priority: `P1`', '- difficulty: `Medium`', '- required_planning_lookup: `none`', '',
+    ...heads.flatMap(name => [`## ${name}`, '', body(name), ''])].join('\n');
+}
+// 一份齐全的契约 Task Spec：头部字段 + 全部约定章节，供 dispatchable 的正例用。
+function fullContractSpec(id: string, attempt = '01'): string {
+  const body: Record<string, string[]> = { '业务结果': ['把这件事办成。'], '验收标准': ['1. 办成了。'] };
+  return [`# ${id}：契约任务`, '', '- handoff_contract: `1`', '- status: `READY`', '- priority: `P1`', '- difficulty: `Medium`',
+    '- dependencies: `none`', `- current_attempt: \`${attempt}\``, '',
+    ...TASK_SECTIONS.flatMap(name => [`## ${name}`, '', ...(body[name] ?? ['见长期规划。']), ''])].join('\n');
+}
+function readyRepo(t: TestContext, capsule: string | null) {
+  return repoWith(t, {
+    'docs/TASK_LIST.md': contractList([contractRow('TASK-001', '契约任务', 'READY', 'none', '01')]),
+    'docs/tasks/TASK-001.md': fullContractSpec('TASK-001'),
+    ...(capsule === null ? {} : { 'docs/execution/TASK-001/attempt-01.md': capsule }),
+  });
+}
+
+test('契约齐全时任务进入 dispatchable，派发胶囊读出原文与指纹', async t => {
+  const capsule = legalCapsule('TASK-001');
+  const c = await readyRepo(t, capsule);
+  const report = await readHandoffReport(c.repo);
+  assert.deepEqual(report.dispatchable, ['TASK-001']);
+  assert.deepEqual(report.diagnostics, []);
+  const read = await readDispatchCapsule(c.repo, 'TASK-001');
+  assert.equal(read.taskId, 'TASK-001');
+  assert.equal(read.attempt, '01');
+  assert.equal(read.rel, 'docs/execution/TASK-001/attempt-01.md');
+  assert.equal(read.text, capsule);
+  assert.equal(read.fingerprint, capsuleFingerprint(capsule));
+  // 指纹只统一换行：整份换成 CRLF 还是同一份，正文多一个字就不是。
+  assert.equal(capsuleFingerprint(capsule.replace(/\n/g, '\r\n')), read.fingerprint);
+  assert.notEqual(capsuleFingerprint(`${capsule}\n`), read.fingerprint);
+  assert.notEqual(capsuleFingerprint(capsule.replace('CAPSULE-ONLY', 'CAPSULE-ONLX')), read.fingerprint);
+  assert.deepEqual(read.anchors, ['src/core/anchor-one.ts']);
+});
+
+test('源码锚点只从限定章节取：别的章节提到的路径不算，重复只算一次', async t => {
+  const anchors = '1. `src/core/one.ts` — 改这里。\n2. `src/core/two.ts` — 和这里。\n3. `src/core/one.ts` — 重复。';
+  const capsule = legalCapsule('TASK-001', { anchors }).replace('见长期规划。', '顺手看 src/core/extra.ts，但这不是锚点。');
+  const c = await readyRepo(t, capsule);
+  const read = await readDispatchCapsule(c.repo, 'TASK-001');
+  assert.deepEqual(read.anchors, ['src/core/one.ts', 'src/core/two.ts']);
+});
+
+test('源码锚点：绝对路径、折返、反斜杠、空项、目录、符号和超过 5 项都不接受', () => {
+  assert.deepEqual(sourceAnchors(legalCapsule('TASK-001')), ['src/core/anchor-one.ts']);
+  assert.deepEqual(sourceAnchors(legalCapsule('TASK-001', { anchors: '- `package.json`\n- `src/a.ts`' })), ['package.json', 'src/a.ts']);
+  const five = Array.from({ length: 6 }, (_, i) => `${i + 1}. \`src/core/a${i}.ts\` — 第 ${i + 1} 处。`).join('\n');
+  for (const bad of [
+    '1. `/etc/passwd` — 绝对路径',
+    '1. `../../outside.ts` — 出仓库',
+    '1. `src/../a.ts` — 折返',
+    '1. `src\\\\core\\\\a.ts` — 反斜杠',
+    '1. `` — 空路径',
+    '1. src/core/a.ts — 没写成行内代码',
+    '1. `readHandoffReport` — 只有符号，没有文件',
+    '1. `src/core/` — 是目录不是文件',
+    '1. `src/a.ts` 和 `src/b.ts` 混在一项里',
+    five,
+  ]) assert.throws(() => sourceAnchors(legalCapsule('TASK-001', { anchors: bad })), /源码锚点/, bad);
+  // 章节整段空着也算空锚点。
+  assert.throws(() => sourceAnchors(legalCapsule('TASK-001', { anchors: '' })), /没有列出源码锚点/);
+  assert.throws(() => sourceAnchors('## 别的\n\n没有。\n'), /没有列出源码锚点/);
+});
+
+test('缺 Capsule、路径错配、状态不是 READY 或章节不齐时读不出派发胶囊', async t => {
+  const missing = await readyRepo(t, null);
+  const report = await readHandoffReport(missing.repo);
+  assert.deepEqual(report.dispatchable, []);
+  assert.ok(report.diagnostics.some(item => item.code === 'READY_CAPSULE_MISSING' && item.taskId === 'TASK-001'));
+  await assert.rejects(readDispatchCapsule(missing.repo, 'TASK-001'), /现在不能派发/);
+  // 台账里根本没有这件任务。
+  await assert.rejects(readDispatchCapsule(missing.repo, 'TASK-077'), /任务台账里没有 TASK-077/);
+
+  const wrongPath = await readyRepo(t, legalCapsule('TASK-001', { planning: 'docs/tasks/TASK-999.md' }));
+  assert.deepEqual((await readHandoffReport(wrongPath.repo)).dispatchable, []);
+  await assert.rejects(readDispatchCapsule(wrongPath.repo, 'TASK-001'), /现在不能派发/);
+
+  for (const state of ['DRAFT', 'CLAIMED', 'CLOSED']) {
+    const capped = await readyRepo(t, legalCapsule('TASK-001', { state }));
+    const seen = await readHandoffReport(capped.repo);
+    assert.deepEqual(seen.dispatchable, [], state);
+    assert.ok(seen.diagnostics.some(item => item.code === 'CAPSULE_CROSS_REFERENCE' && item.taskId === 'TASK-001'), state);
+    await assert.rejects(readDispatchCapsule(capped.repo, 'TASK-001'), /现在不能派发/, state);
+  }
+
+  const short = await readyRepo(t, legalCapsule('TASK-001', { omit: '禁止验证' }));
+  const seen = await readHandoffReport(short.repo);
+  assert.deepEqual(seen.dispatchable, []);
+  assert.ok(seen.diagnostics.some(item => item.code === 'CAPSULE_SECTIONS' && item.taskId === 'TASK-001'));
+  await assert.rejects(readDispatchCapsule(short.repo, 'TASK-001'), /现在不能派发/);
+});
+
+test('胶囊指向仓库外时按读取安全拒绝，不把链接目标当正文', async t => {
+  const c = await readyRepo(t, null);
+  const outside = join(c.temp, 'outside-capsule.md');
+  await writeFile(outside, legalCapsule('TASK-001'));
+  const rel = join(c.repo, 'docs', 'execution', 'TASK-001', 'attempt-01.md');
+  await mkdir(dirname(rel), { recursive: true });
+  await symlink(outside, rel);
+  const report = await readHandoffReport(c.repo);
+  assert.deepEqual(report.dispatchable, []);
+  assert.ok(report.diagnostics.some(item => item.severity === 'error' && item.code.startsWith('CAPSULE_')));
+  await assert.rejects(readDispatchCapsule(c.repo, 'TASK-001'), /现在不能派发/);
 });

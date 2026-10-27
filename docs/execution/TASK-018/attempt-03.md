@@ -1,5 +1,7 @@
 # Execution Capsule — TASK-018 / attempt-03
 
+- dispatch_state: `待确认`
+- handoff_contract: `1`
 - planning_source: `docs/tasks/TASK-018.md`
 - task_id: `TASK-018`
 - attempt: `03`

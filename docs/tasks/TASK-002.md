@@ -1,10 +1,11 @@
-# TASK-002：设置页可视化登记项目
+# TASK-002 — 设置页可视化登记项目
 
-- 状态：`PASSED`
-- 优先级：`P1`
-- 难度等级：`Medium`
-- 前置任务：`TASK-001` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
-- 需求来源：主人希望在桌面工作台中选择文件夹登记项目，并在登记后直接用于新建群聊。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `Medium`
+- dependencies: `TASK-001[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -75,3 +76,31 @@ npm run build
 - 验证通过：`npm run typecheck`；`npm run test:ui -- test/ui/settings-projects.test.tsx test/ui/bridge.test.tsx`（9 项）；`node --test test/desktop.test.ts`（31 项）；`npm run build`。
 - 备注：当前 `/Applications` 中运行的工作台仍是旧构建，不包含“项目”分页，因此本次不能据此完成新版浅色、深色、窄窗口、双层弹窗与真实原生目录选择的截图验收。该项列入最终非隔离环境 QA，不构成本轮代码阻断。
 - 优先级复核：本任务保持 `P1` 并已完成；其通过解除 `TASK-003` 的依赖，`TASK-003` 保持 `P2`。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

@@ -1,8 +1,9 @@
 # Review Record — TASK-018 / attempt-01
 
+- handoff_contract: `1`
 - task_id: `TASK-018`
 - attempt: `01`
-- capsule: `legacy-task-spec-only`
+- capsule: `docs/execution/TASK-018/attempt-01.md`
 - reviewed_at: `2026-10-20`
 - verdict: `CHANGES_REQUESTED`
 - reviewer_role: `lead-ai`

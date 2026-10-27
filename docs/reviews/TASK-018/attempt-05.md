@@ -1,5 +1,6 @@
 # Review Record — TASK-018 / attempt-05
 
+- handoff_contract: `1`
 - task_id: `TASK-018`
 - attempt: `05`
 - capsule: `docs/execution/TASK-018/attempt-05.md`

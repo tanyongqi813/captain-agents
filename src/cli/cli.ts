@@ -4,7 +4,7 @@ import { recordRealCheck } from '../core/real.ts';
 import { fileURLToPath } from 'node:url';
 import { ensureHome } from '../core/paths.ts';
 import { hasCode } from '../core/fsx.ts';
-import { addProject, listProjects, loadProject, setArchived, setProjectLabel } from '../core/project.ts';
+import { addProject, findProject, listProjects, loadProject, setArchived, setProjectLabel } from '../core/project.ts';
 import { parseBudget } from '../core/budget.ts';
 import { checkProject } from '../core/project-check.ts';
 import { formatCheck } from './check.ts';
@@ -53,6 +53,12 @@ const help = () => `派活工作台：登记、派发和收集本机助手的任
   xagents project label <名字> <显示名>   # 只改应用里显示的项目名
   xagents project archive|unarchive <名字>   # 归档后看板已完成列和历史页“全部”不显示，记录和打分都留着；归档的项目不能派活
   xagents project list
+  xagents plan doctor <项目名>
+    检查任务规划是否符合共享契约，只打印机器诊断，不改文件。有错误时退出码是 2
+  xagents plan migrate <项目名> [--apply]
+    预览把旧规划迁到契约 1。不加 --apply 只预览；只有语义对得上才写入
+  xagents plan verify <项目名>
+    核对任务、执行说明和审查记录的交叉引用，只打印机器诊断，不改文件。有错误时退出码是 2
   xagents project check <名字> [--quick] [--json]
     接入体检：看仓库、有没有没提交的改动、副本目录、疑似密钥文件、验收命令；不加 --quick 还会在临时副本里装依赖、跑一遍验收（比较久）。有不行的项退出码为 1
   xagents quota [--json]
@@ -287,6 +293,24 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
       console.log(`选手联网：${networkAllowed ? '开（打开后网络完全不限）' : '关'}（设置 → 联网）`);
       if (unlistedLine(listed)) console.log(unlistedLine(listed));
       return 0;
+    }
+    if (cmd === 'plan') {
+      const sub = rest[0];
+      if (sub !== 'doctor' && sub !== 'migrate' && sub !== 'verify') throw new Error('plan 命令只支持 doctor、migrate 和 verify，请运行 xagents --help。');
+      const flags = sub === 'migrate' ? ['apply'] : [];
+      const parsed = parse(rest.slice(1), [], flags);
+      arity(parsed.positional, 1);
+      const project = await findProject(parsed.positional[0]);
+      if (sub === 'migrate') {
+        const { migrateHandoff } = await import('../core/plan-migrate.ts');
+        const result = await migrateHandoff(project.repo, { apply: parsed.switches.has('apply') });
+        console.log(JSON.stringify(result, null, 2));
+        return parsed.switches.has('apply') && !result.applied ? 2 : 0;
+      }
+      const { readHandoffReport } = await import('../core/task-plan.ts');
+      const report = await readHandoffReport(project.repo);
+      console.log(JSON.stringify(report, null, 2));
+      return report.diagnostics.some(item => item.severity === 'error') ? 2 : 0;
     }
     if (cmd === 'project') {
       if (rest[0] === 'list') {

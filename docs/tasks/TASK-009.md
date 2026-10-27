@@ -1,10 +1,11 @@
-# TASK-009：自治执行记录与确定性推进器
+# TASK-009 — 自治执行记录与确定性推进器
 
-- 状态：`PASSED`
-- 优先级：`P1`
-- 难度等级：`High`
-- 前置任务：`TASK-006` 与 `TASK-008` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
-- 需求来源：无人看守需要独立于聊天内存、可崩溃恢复的全局执行状态。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `High`
+- dependencies: `TASK-006[PASSED|PASSED_WITH_NOTES], TASK-008[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -262,3 +263,31 @@ npm run build
 - 阻断 3：`reconcileAutopilot` 对活跃状态但缺少 `pid` 的登记直接返回。创建登记后、启动推进器前崩溃，或 spawn 失败时，会留下永久处于 `planning` 的记录；`status/list` 不会标为 `recovering`，再次启动也没有受控恢复入口。应把“活跃且没有合法 pid”视为丢失推进器并转 `recovering`，同时覆盖 create→launch 崩溃窗口及 spawn 失败后的恢复测试。
 - 集成要求：修复必须基于当前 TASK-007/TASK-008 结果重放 `dispatch.ts`、`job.ts`、`plan-dispatch.ts`、`wake.ts` 的小块改动，禁止用本 worktree 的整文件覆盖主工作区；指定验证通过后再复审。
 - 优先级复核：保持 `P1 High`，状态改为 `CHANGES_REQUESTED`；TASK-010 继续等待。已复核，无调整。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

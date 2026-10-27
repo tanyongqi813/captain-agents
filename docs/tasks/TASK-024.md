@@ -1,9 +1,11 @@
-# TASK-024：规划共享契约与安全迁移校对
+# TASK-024 — 规划共享契约与安全迁移校对
 
-- 状态：`READY`
-- 优先级：`P1`
-- 难度：`High`
-- 前置任务：`TASK-023` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `High`
+- dependencies: `TASK-023[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -47,3 +49,23 @@ npm run typecheck
 ## 已知基线
 
 - 无。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

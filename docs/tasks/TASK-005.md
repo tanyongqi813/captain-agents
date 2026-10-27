@@ -1,10 +1,11 @@
-# TASK-005：安全识别 TASK_LIST 与 Task Spec
+# TASK-005 — 安全识别 TASK_LIST 与 Task Spec
 
-- 状态：`PASSED`
-- 优先级：`P1`
-- 难度等级：`High`
-- 前置任务：`TASK-004` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
-- 需求来源：工作台需要识别由 `architect-pm-handoff` 维护的项目规划文件，并按状态与依赖形成可执行任务队列。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `High`
+- dependencies: `TASK-004[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -92,3 +93,31 @@ npm run test:ui -- test/ui/data-truth.test.tsx
 - 补测要求：增加“缺少状态”“缺少/畸形前置任务”“行 ID 与 spec 文件 ID 不一致”“`PASSED_WITH_NOTES` 无错误诊断”的回归测试；继续覆盖路径边界和项目隔离。
 - 报告要求：修正完成后填写本任务实施报告，列出改动摘要、验证结果、未完成项和 diff 摘要。
 - 优先级复核：`TASK-005` 保持 `P1`，因为它仍阻塞 `TASK-006` 且缺陷可能造成错误派发；`TASK-003` 保持 `P2`；`TASK-006` 保持 `P2` 且继续为 `DRAFT`；`TASK-007` 保持 `P1 BLOCKED`。已复核，无调整。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

@@ -1,10 +1,11 @@
-# TASK-008：执行预算、停滞判定与可靠收尾
+# TASK-008 — 执行预算、停滞判定与可靠收尾
 
-- 状态：`PASSED`
-- 优先级：`P1`
-- 难度等级：`High`
-- 前置任务：无
-- 需求来源：真实执行 TASK-006 时，两个选手均长时间运行而没有自动收敛；产品定位是无人看守执行。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `High`
+- dependencies: `none`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -135,3 +136,31 @@ npm run build
 - 修正要求：统一所有由主人 `stop` 导致的直接、修正和 Windows 强停路径写入 `termination: manual`；扩展轮次归档以保存上一轮 `termination`/`stallWarning`，`resumeMember` 在归档后清空当前轮字段。补充测试覆盖无存活看管进程的 stop、`reconcile` 的 stopRequested 路径，以及带旧终止信息续接后“历史保留、当前轮清空、成功结束仍为 null”。不得扩大到自动重试、诊断或新界面。
 - 修正后验证：`npm run typecheck`；`node --test --test-timeout=120000 test/lifecycle.test.ts test/desktop.test.ts test/chat-engine.test.ts`；`npm run test:ui`；`npm run build`。填写实施报告补充并再次等待复审。
 - 优先级复核：`TASK-008` 保持 `P1`，因为它仍阻塞 `TASK-009`；`TASK-009` 至 `TASK-012` 的依赖与优先级不变；`TASK-003` 保持 `P2 READY`；`TASK-007` 保持 `P1 BLOCKED`。已复核，无调整。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

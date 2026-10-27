@@ -1,10 +1,11 @@
-# TASK-004：负责人规则接入项目任务台账
+# TASK-004 — 负责人规则接入项目任务台账
 
-- 状态：`PASSED`
-- 优先级：`P1`
-- 难度等级：`Low`
-- 前置任务：无
-- 需求来源：主人正在使用 `architect-pm-handoff` 维护 `docs/TASK_LIST.md` 和 `docs/tasks/TASK-xxx.md`，希望负责人和工作台以这些文件为规划来源，但不按其中的推荐执行者绑定选手。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P1`
+- difficulty: `Low`
+- dependencies: `none`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -70,3 +71,31 @@ node --test test/connect.test.ts test/guide.test.ts
 - 负责人复跑：`npm run typecheck`、`test/connect.test.ts`、`test/guide.test.ts`、`test/intro.test.ts` 均通过。
 - 实施报告未回填，但实际 diff、测试和验收标准足以完成本次评审。
 - 优先级复核：`P1` 保持不变；通过后解除 TASK-005 的前置依赖。难度 `Low` 保持不变。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

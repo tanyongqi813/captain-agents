@@ -1,11 +1,11 @@
-# TASK-016：正常复审沉淀评分与难度证据
+# TASK-016 — 正常复审沉淀评分与难度证据
 
-- 状态：`PASSED`
-- 最新评审：`docs/reviews/TASK-016/attempt-01.md`（实施在 `.worktrees/task-016`，尚未整合）
-- 优先级：`P2`
-- 难度等级：`High`
-- 前置任务：`TASK-011`、`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
-- 需求来源：负责人在正常派活、复审中积累评分，作为合理分工的依据，避免额外试题消耗。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P2`
+- difficulty: `High`
+- dependencies: `TASK-011[PASSED|PASSED_WITH_NOTES], TASK-017[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -67,3 +67,31 @@ node --test --test-timeout=120000 test/rate.test.ts test/profiles.test.ts test/a
 - 定向验证通过：`npm run typecheck`；TASK-016 相关 6 个测试文件共 135 项全部通过。
 - 需修正两个证据边界：自动评分的同 source 幂等判断目前在任务锁外，并发补评可写出两版；`noteEvidence` 的合并顺序允许调用方传入的 `verify` 覆盖 `job.verify/verifySkip` 权威结论。详细修正边界、文件白名单和验证命令记在 TASK-016 实施副本的同名 Task Spec 中。
 - 优先级复核：已复核，无调整，仍为 P2。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

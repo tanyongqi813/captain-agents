@@ -1,12 +1,11 @@
-# TASK-018：设置成本资料与额度未知时的预算
+# TASK-018 — 设置成本资料与额度未知时的预算
 
-- 状态：`CHANGES_REQUESTED`
-- 优先级：`P1`
-- 当前评审：`docs/reviews/TASK-018/attempt-05.md`
-- 下一轮：`docs/execution/TASK-018/attempt-06.md`（F-08/F-09；F-01/F-03/F-04/F-06 已解决）
-- 难度等级：`High`
-- 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`
-- 需求来源：无法正常查询额度或使用中转站时，主人需要提供有效的计价依据与本地消耗上限。
+- handoff_contract: `1`
+- status: `CHANGES_REQUESTED`
+- priority: `P1`
+- difficulty: `High`
+- dependencies: `TASK-017[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `06`
 
 ## 业务结果
 
@@ -65,3 +64,31 @@ npm run build
 ## 评审记录
 
 待 Codex 评审。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。

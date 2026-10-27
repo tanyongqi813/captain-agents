@@ -1,11 +1,11 @@
-# TASK-015：按完成总成本生成派活参考
+# TASK-015 — 按完成总成本生成派活参考
 
-- 状态：`PASSED`
-- 最新评审：`docs/reviews/TASK-015/attempt-01.md`（历史三轮记录保留；本轮定向修正通过，尚未完成整合验收）
-- 优先级：`P2`
-- 难度等级：`High`
-- 前置任务：`TASK-017` 评审为 `PASSED` 或 `PASSED_WITH_NOTES`；沿用现有 roster、settings、quota、profiles 和任务记录
-- 需求来源：不重复派题评分，并避免连续困难任务过度消耗同一家额度。
+- handoff_contract: `1`
+- status: `PASSED`
+- priority: `P2`
+- difficulty: `High`
+- dependencies: `TASK-017[PASSED|PASSED_WITH_NOTES]`
+- current_attempt: `none`
 
 ## 业务结果
 
@@ -124,3 +124,31 @@ node --test --test-timeout=120000 test/dispatch-advice.test.ts test/guide.test.t
 本轮验证：类型检查通过；五文件测试首次51/52通过，失败仍是quota.test.ts「执行器识别分段回复」临时pids文件未生成，单独按测试名重跑1/1通过，不能称首次全过。独立纯函数复现证实上述功能缺陷。未跑完整verify/UI/Electron，存在功能阻断，不进入通过后提交同步。
 
 优先级复核：已复核，无调整。TASK-015 保持P2 / High / CHANGES_REQUESTED；TASK-016/018前置和优先级不变。下一步只修本任务剩余的流程时间归档边界。
+
+## 非目标
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 架构设计
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 兼容要求
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 依赖与排序
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 主要接口
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 长期约束
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
+
+## 微批边界
+
+待确认（旧文档未提供独立字段；迁移器未推断内容）。
