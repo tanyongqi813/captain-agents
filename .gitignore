@@ -5,3 +5,5 @@ test-results/
 out/
 dist/
 test/e2e/artifacts/
+.claude/worktrees/
+output/playwright/
