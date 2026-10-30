@@ -141,3 +141,9 @@ export function compileLeadCapsules(input: LeadCapsuleInput): LeadCapsuleCompila
   }
   return { kind: 'uncommitted-capsule-proposals', action: reply.action, source: { ...source }, findingIds: [...input.findingIds], capsules };
 }
+
+// 持锁依次写文件不是规划事务。事务恢复、唯一领取和执行基准尚未接齐时，
+// 必须在零IO处拒绝，不能返回让调用方自动续跑的结果。纯编译仍可用于人工审查。
+export async function publishLeadCorrection(_repo: string, _input: Omit<LeadCapsuleInput, 'files'>): Promise<LeadCapsuleCompilation> {
+  throw new Error('自动发布尚未具备完整规划事务、领取租约和执行基准；未写入规划，请负责人保留现场处理。');
+}
