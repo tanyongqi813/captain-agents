@@ -128,6 +128,17 @@ export function killTree(pid: number | undefined, signal: TreeSignal, since?: nu
   }
 }
 
+// 同一个看管实例终态收尾可能由两层finally触发。只记已确认退出且清理成功的POSIX组；
+// 首次错误不缓存，未退出/换身份继续清理，Windows仍每次按快照回收。
+export function finalTreeCleanup(kill: typeof killTree = killTree) {
+  let cleaned: { pid: number; since?: number; exitedAt: number } | undefined;
+  return (pid: number | undefined, since?: number, exitedAt?: number) => {
+    if (!isWindows && exitedAt !== undefined && cleaned && cleaned.pid === pid && cleaned.since === since && cleaned.exitedAt === exitedAt) return;
+    kill(pid, 'SIGKILL', since, exitedAt);
+    if (!isWindows && pid !== undefined && exitedAt !== undefined) cleaned = { pid, since, exitedAt };
+  };
+}
+
 // 跑一条外壳命令（项目登记的验收、准备命令）。两种系统都用 sh，同一条命令两边写法一样。
 // Windows 上用 Git 自带的 sh（Git 本来就是必装的）；XAGENTS_SH 可以另指一个。不用 PATH 上的 bash：那可能是 WSL 的入口。
 let cachedSh: string | undefined;

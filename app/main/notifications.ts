@@ -59,9 +59,13 @@ function chatNotices(view: View): Notice[] {
       body: `${isWho(m.from) ? view.workers[m.from]?.name ?? m.from : m.from}：${clip(m.text)}`,
       target: { kind: 'chat' as const, id: chat.id } })));
 }
-// 负责人新拍的板、回复主人的留言，以及小队进入“等负责人”。做完、出错、任务失联、验收没过不发。
+// 普通完成/错误不发；费用看管首停证据是TASK-034专门例外。
 export function notices(view: View): Notice[] {
-  return [...view.jobs.filter(j => j.decision?.by === 'lead').map(j => decisionNotice(view, j)), ...replyNotices(view), ...teamNotices(view), ...chatNotices(view)];
+  const money: Notice[] = view.jobs.filter(j => ['stopped', 'failed'].includes(j.state) && j.moneyStopAt).map(j => ({
+    key: `job:${j.id}:money:${j.moneyStopAt}`, body: '费用看管已停止任务，请检查预算及费用。',
+    target: { kind: 'job', id: j.id },
+  }));
+  return [...money, ...view.jobs.filter(j => j.decision?.by === 'lead').map(j => decisionNotice(view, j)), ...replyNotices(view), ...teamNotices(view), ...chatNotices(view)];
 }
 type BatchMeta = { id: string; title: string; order: Map<string, number> };
 function batchesOf(view: View) {

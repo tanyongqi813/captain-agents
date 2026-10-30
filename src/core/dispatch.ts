@@ -24,14 +24,20 @@ import { checkChoice } from './policy.ts';
 import { isolationOf, vendorOf } from './roster.ts';
 import { initialRealCheck } from './real.ts';
 import { readChat } from './chat.ts';
-import { assertDeepseekAvailable } from './deepseek-settings.ts';
+import { assertDeepseekAvailable, assertDeepseekReasoning, deepseekBudgetForGroup, deepseekModelPrice } from './deepseek-settings.ts';
 import { sharedAutopilotWorktree } from './autopilot-worktree.ts';
 import { capsuleFingerprint } from './task-plan.ts';
+import { readDeepseekCatalog } from './deepseek-models.ts';
+import { reserveMoney, observeMoney } from './money-budget.ts';
+import { readDeepseekRuntimeSettings } from './settings.ts';
+import { deepseekCredentialVersion } from './deepseek-credentials.ts';
 
 // team：小队派的队员（docs/design-team.md），记进任务记录，看板据此画进小队卡。
 // plan：从项目任务规划派发的追溯元数据（docs/tasks/TASK-006.md），由规划派发入口下发，写进任务记录。
 export type RunOptions = { who: string[]; project?: string; base?: string; kind?: string; title?: string; summary?: string; ro?: boolean; force?: boolean; dirtyOk?: boolean; real?: boolean | string; team?: { id: string; role: 'writer' | 'reviewer' }; worktree?: string; chat?: { id: string }; plan?: { taskId: string; spec: string }; autopilot?: { run: string; token: string }; autopilotRole?: 'writer' | 'reviewer';
-  capsule?: { rel: string; fingerprint: string; anchors?: string[] } };
+  // 规划派发专用（TASK-025）：派发正文来自这一轮的 Execution Capsule，起点必须已经包含同一份原文和它明列的源码锚点。
+  capsule?: { rel: string; fingerprint: string; anchors?: string[] }; moneyGroup?: string };
+
 // 规划派发要求起点自带这一轮的 Execution Capsule 原文：主工作区没提交的规划文件不会进入新副本，
 // 起点里没有或和工作区这一份对不上就在注册任务、开副本、启动选手之前拒绝，并把两边的提交说清楚。
 // 起点还得有 Capsule 明列的每一个源码锚点文件：缺哪个就报哪个，不猜替代文件、不降级成警告。
@@ -77,10 +83,28 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
   if (!summary) throw new Error('请用 --summary 写一两句给主人看的‘要做什么’，用大白话，不写文件名和技术细节。');
   if ([...summary].length > 200 || /[\u0000-\u001f\u007f-\u009f]/u.test(options.summary!)) throw new Error('--summary 请写 1–200 字，不能含控制字符。');
   if (!options.who.length) throw new Error('还没选择选手，请加上 --who codex:xhigh（可以重复）。');
-  const { workers, archivedProjects, limits, networkAllowed, deepseek } = await readSettings();
+  const { workers, archivedProjects, limits, networkAllowed, deepseek: configuredDeepseek } = await readSettings();
   const chosen = options.who.map(selection);
+  const deepseek = chosen.some(s => vendorOf(s.who) === 'deepseek') ? await readDeepseekRuntimeSettings() : configuredDeepseek;
+  const moneyGroup = options.moneyGroup ?? (chosen.some(s => vendorOf(s.who) === 'deepseek') ? deepseek.budgetGroup : undefined) ?? 'default';
+  if (options.moneyGroup !== undefined && !chosen.some(s => vendorOf(s.who) === 'deepseek')) throw new Error('费用预算组只用于DeepSeek任务。');
+  const money = chosen.some(s => vendorOf(s.who) === 'deepseek') ? deepseekBudgetForGroup(deepseek, moneyGroup) : undefined;
+  if (moneyGroup !== 'default' && !money?.enabled) throw new Error('非默认费用预算组须先启用预算。');
+  const dsCatalog = chosen.some(s => vendorOf(s.who) === 'deepseek') ? await readDeepseekCatalog(deepseek) : null;
+  const modelPrices = new Map<string, ReturnType<typeof deepseekModelPrice>>();
+  for (const choice of chosen) if (vendorOf(choice.who) === 'deepseek') {
+    choice.model = choice.who === 'deepseek-flash' ? deepseek.flashModel : deepseek.proModel;
+    if (money?.enabled) modelPrices.set(choice.who, deepseekModelPrice(money, choice.model, choice.who === 'deepseek-flash' ? 'flash' : 'pro'));
+    // 查询失败只意味着目录陈旧，不能撤销最后一次权威目录已经确认的下线事实。
+    if (dsCatalog?.accountVerified && !dsCatalog.models.includes(choice.model)) {
+      throw new Error(`DeepSeek 当前目录没有模型 ${choice.model}，请在“编辑”中重新获取并选择可用模型。`);
+    }
+    assertDeepseekReasoning(deepseek, choice.model, choice.who === 'deepseek-flash' ? deepseek.flashReasoning : deepseek.proReasoning);
+  }
   checkListed(await listedProviders(), chosen);
   for (const choice of chosen) checkChoice(workers, choice);
+  // 先报告程序未安装或主人已禁用，再检查登录；两者都在任务注册等副作用前。
+  const credentialVersion = !process.env.XAGENTS_FAKE_WORKER && chosen.some(s => vendorOf(s.who) === 'deepseek') ? await deepseekCredentialVersion() : undefined;
   assertDeepseekAvailable(deepseek, chosen.some(choice => vendorOf(choice.who) === 'deepseek'));
   const kind = options.kind || '实现';
   if (!['修复', '实现', '审查', '调研', '测量'].includes(kind)) throw new Error('--kind 只允许修复、实现、审查、调研、测量，请修改后重试。');
@@ -100,6 +124,7 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
     throw new Error(`主目录有 ${dirty.length} 个文件没提交（${shown}），选手的副本看不到这些改动。先把要给选手的东西提交（比如骨架和共同约定，提交到分支并用 --base 指向它）；确认这些改动和这件活无关，再加 --dirty-ok 派活。`);
   }
   const base = (await git(project.repo, ['rev-parse', '--verify', '--end-of-options', `${options.base || 'main'}^{commit}`])).trim();
+  // 规划派发的起点一致性：在注册任务、开副本、启动选手之前先证明起点含同一份 Capsule。
   if (options.capsule) await assertCapsuleInStart(project.repo, base, options.capsule);
   // 现成副本只能借用已登记的群副本，不能借这个入口扩大可写路径。
   const chat = options.chat ? await readChat(options.chat.id) : undefined;
@@ -142,6 +167,8 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
       for (const spec of chosen) {
         const id = await reserveJob(spec.who, file, now);
         const job: Job = { id, batch, ...spec, project: project.name, repo: project.repo, base,
+          ...(vendorOf(spec.who) === 'deepseek' ? { deepseekConnection: { ...deepseek, ...(money ? { money } : {}) }, deepseekBudgetGroup: moneyGroup } : {}),
+          ...(vendorOf(spec.who) === 'deepseek' && credentialVersion ? { deepseekCredentialVersion: credentialVersion } : {}),
           worktree: shared?.worktree ?? chat?.worktree ?? await worktreePath(project, id), branch: shared?.branch ?? chat?.branch ?? `xa/${id}`, mode: options.ro ? 'read-only' : 'workspace-write',
           ...(realCheck ? { realCheck: structuredClone(realCheck) } : {}),
           ...(network ? { network: true as const } : {}),
@@ -152,9 +179,16 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
           ...(options.autopilotRole ? { autopilotRole: options.autopilotRole } : {}),
           kind, title, summary, state: 'queued', created: now.toISOString(), queuedBy: process.pid, queuedSince: processSince(process.pid) };
         await createJob(Object.assign(job, { quota_before: quota })); jobs.push(job);
+        if (vendorOf(job.who) === 'deepseek' && money?.enabled) {
+          await reserveMoney(job.id, money, modelPrices.get(job.who)!,
+            Date.now(), { budgetGroup: moneyGroup, model: job.model }, moneyGroup);
+        }
       }
     } catch (e) {
-      for (const j of jobs) await updateJob(j.id, current => finish(current, 'failed', `登记失败：${(e as Error).message}`));
+      for (const j of jobs) {
+        if (j.deepseekConnection?.money?.enabled) await observeMoney(j.id, undefined, { read: 0, cached: 0, out: 0 }, true).catch(() => {});
+        await updateJob(j.id, current => finish(current, 'failed', `登记失败：${(e as Error).message}`));
+      }
       throw e;
     } finally {
       const record: Batch = { id: batch, kind, title, summary, started: now.toISOString(), base, jobs: jobs.map(j => j.id) };
@@ -187,6 +221,9 @@ export async function dispatch(file: string, options: RunOptions, start: typeof 
       });
       if (cli) await start(await readJob(job.id), cli);
     } catch (error) {
+      if (job.deepseekConnection?.money?.enabled && (await readJob(job.id)).state === 'queued') {
+        await observeMoney(job.id, undefined, { read: 0, cached: 0, out: 0 }, true).catch(() => {});
+      }
       await updateJob(job.id, j => { if (j.state === 'queued') finish(j, 'failed', (error as Error).message); });
     }
     await reconcileSafely();

@@ -21,6 +21,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { isWindows } from './platform.ts';
 import { codexEndpoint, official } from './endpoint.ts';
 import type { DeepseekEndpoint } from './deepseek-settings.ts';
+import { invalidateDeepseekCatalog } from './deepseek-models.ts';
 
 const effortNames: Record<Effort, string> = { medium: '中档', high: '高档', xhigh: '超高档' };
 // --who 写法：选手:强度[:fast]。强度只开中档、高档、超高档，永远不拉满，也不开最低档；允许哪些由 roster 决定。
@@ -54,7 +55,7 @@ function deepseekArgs(env: Record<string, string>, endpoint: DeepseekEndpoint) {
   env.CODEX_HOME = deepseekHome();
   return ['-c', 'model_provider="deepseek"', '-c', deepseekProvider(endpoint), ...DEEPSEEK_LOGIN, '-c', 'web_search="disabled"'];
 }
-async function configuredDeepseek() { return (await import('./settings.ts')).readSettings().then(s => s.deepseek); }
+async function configuredDeepseek() { return (await import('./settings.ts')).readDeepseekRuntimeSettings(); }
 // 派 DeepSeek 活前在隔离外查一次登录；没登录就不派，提示主人自己登录（钥匙只有主人能拿到）。
 export async function checkDeepseekLogin(run: Executor = execute) {
   await mkdir(deepseekHome(), { recursive: true, mode: 0o700 });
@@ -78,6 +79,7 @@ export async function loginDeepseek(key: string) {
     child.stdin.end(key + '\n');
   });
   if (!ok) throw new Error('Codex 没能保存 DeepSeek 的登录，请重试。');
+  await invalidateDeepseekCatalog(endpoint);
   await checkDeepseekLogin();
 }
 export async function srtPath() {
@@ -173,11 +175,13 @@ export async function command(job: Job, text: string, project: Isolated, runtime
     // 用户的 Codex 连的是哪个接口，原样带上（--ignore-user-config 会把它一起丢掉，接自定义接口的人就派不出活）。
     // 钥匙放在环境变量里的：只把配置里点名的那一个交给 Codex 主程序，并明写不给它跑的命令（docs/design-scan.md 规则二）。
     const endpoint = deepseek ? official : await codexEndpoint();
-    const deepseekConfig = deepseek ? await configuredDeepseek() : undefined;
+    const deepseekConfig = deepseek ? job.deepseekConnection ?? await configuredDeepseek() : undefined;
     const hardened = !isWindows || await (await import('./selfcheck.ts')).windowsHardened();
     if (endpoint.envKey) pass = [endpoint.envKey];
-    const model = deepseekConfig ? (job.who === 'deepseek-flash' ? deepseekConfig.flashModel : deepseekConfig.proModel) : job.model;
-    args = ['exec', '--ignore-user-config', ...(isWindows ? (hardened ? WINDOWS_SANDBOX : WINDOWS_PLAIN) : []), ...disable.flatMap(n => ['--disable', n]), ...(deepseekConfig ? deepseekArgs(env, deepseekConfig) : endpoint.args), '-c', codexEnvPolicy(deepseek ? KEY_VARS : pass), '-m', model, '-c', `model_reasoning_effort="${job.effort}"`, '-c', 'default_permissions="xa"', '-c', codexPermissions(job, project, tmp, network, undefined, !hardened), '-C', job.worktree, '--json', '-o', join(dir, 'final.md'), '-'];
+    const model = job.deepseekConnection ? job.model : deepseekConfig ? (job.who === 'deepseek-flash' ? deepseekConfig.flashModel : deepseekConfig.proModel) : job.model;
+    const reasoning = deepseekConfig && (job.who === 'deepseek-flash' ? deepseekConfig.flashReasoning : deepseekConfig.proReasoning);
+    const effortArgs = reasoning === 'default' ? [] : ['-c', `model_reasoning_effort="${job.effort}"`];
+    args = ['exec', '--ignore-user-config', ...(isWindows ? (hardened ? WINDOWS_SANDBOX : WINDOWS_PLAIN) : []), ...disable.flatMap(n => ['--disable', n]), ...(deepseekConfig ? deepseekArgs(env, deepseekConfig) : endpoint.args), '-c', codexEnvPolicy(deepseek ? KEY_VARS : pass), '-m', model, ...effortArgs, '-c', 'default_permissions="xa"', '-c', codexPermissions(job, project, tmp, network, undefined, !hardened), '-C', job.worktree, '--json', '-o', join(dir, 'final.md'), '-'];
   } else {
     file = nodeRunner().file;
     // 替身模式仍传入完整参数；无需安装或执行真正的 srt。

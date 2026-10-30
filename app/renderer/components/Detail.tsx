@@ -69,6 +69,7 @@ function JobBody({ job: j, workers }: { job: ViewJob; workers: Workers }) {
     <Section title="要做什么"><p>{j.summary || '负责人还没留下说明'}</p></Section>
     {j.network && <NetworkNote />}
     {(live || j.timing) && <Section title="进展"><TimingNote job={j} />{live && <ActivityList activity={j.activity} sleeps={j.sleeps} />}</Section>}
+    {j.dispatchTrace && <DispatchTraceSection trace={j.dispatchTrace} />}
     {result && <Section title="结果"><p>{result}</p></Section>}
     {j.realCheck && <RealCheck check={j.realCheck} />}
     {awaitingLead(j) && <div className="faint card-note">{HAND}</div>}
@@ -81,6 +82,22 @@ function JobBody({ job: j, workers }: { job: ViewJob; workers: Workers }) {
     </div>{actions.feedback}
     <Comments job={j} />
   </>;
+}
+function tokenCount(value: number) { return value >= 10_000 ? `${(value / 10_000).toFixed(1)} 万` : value.toLocaleString('zh-CN'); }
+function DispatchTraceSection({ trace }: { trace: NonNullable<ViewJob['dispatchTrace']> }) {
+  const usage = trace.usage;
+  const cacheRate = usage && usage.read > 0 ? Math.round(usage.cached / usage.read * 100) : null;
+  return <Section title="派活流程日志">
+    <ul className="plain-list">
+      <li>{trace.requestLowerBound > 0 ? `模型请求：至少 ${trace.requestLowerBound} 次（通道未提供精确逐次请求数）` : '模型请求：通道未提供可核对的请求次数'}</li>
+      <li>首轮载荷：{trace.promptBytes === undefined ? '旧记录未采集' : `${trace.promptBytes.toLocaleString('zh-CN')} 字节`}</li>
+      <li>累计输入：{usage ? tokenCount(usage.read) + ' token' : '通道尚未返回用量'}</li>
+      <li>缓存命中：{cacheRate === null ? '没有记录' : `${cacheRate}%（${tokenCount(usage!.cached)} token）`}</li>
+      <li>工具失败：{trace.toolFailures === undefined ? '未采集' : `${trace.toolFailures} 次`}；协议异常：{trace.protocolErrors === undefined ? '未采集' : `${trace.protocolErrors} 次`}</li>
+      {trace.metadataFallback && <li>模型元数据缺失：运行器使用了回退参数，需要校正模型目录</li>}
+    </ul>
+    <p className="faint">逐轮输入 token 是否增长要由通道提供分段用量才能精确判断；这里只展示可证明的数据，不把累计值伪装成单次值。</p>
+  </Section>;
 }
 function BatchBody({ entry, workers, open, summary }: { entry: Entry; workers: Workers; open: Open; summary?: string }) {
   const actions = useActions(), remaining = entry.members.filter(j => !isOpen(j) && available(j));

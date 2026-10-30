@@ -1,7 +1,7 @@
 import type { View } from '../../src/core/view-types.ts';
 import type { ProjectCheck } from '../../src/core/project-check.ts';
 import type { WorkersPolicy } from '../../src/core/policy.ts';
-import type { Appearance, Limits, Storage } from '../../src/core/settings.ts';
+import type { Appearance, Limits, Storage, DeepseekCatalogConsent } from '../../src/core/settings.ts';
 import type { DeepseekEndpoint } from '../../src/core/deepseek-settings.ts';
 import type { ConnectAi, ConnectStatus } from '../../src/core/intro.ts';
 import type { Effort } from '../../src/core/roster.ts';
@@ -23,6 +23,7 @@ export const channels = {
   chatCreate: 'xa:chat-create', chatSay: 'xa:chat-say', chatStop: 'xa:chat-stop', chatRename: 'xa:chat-rename',
   settingsGet: 'xa:settings-get', settingsSet: 'xa:settings-set',
   deepseekLogin: 'xa:deepseek-login', deepseekModels: 'xa:deepseek-models',
+  deepseekCatalogConsent: 'xa:deepseek-catalog-consent', deepseekCatalogConsentSet: 'xa:deepseek-catalog-consent-set',
   quotaRefresh: 'xa:quota-refresh', copyIntro: 'xa:copy-intro',
   connectStatus: 'xa:connect-status', connect: 'xa:connect', disconnect: 'xa:disconnect',
   networkAllowed: 'xa:network-allowed',
@@ -107,6 +108,8 @@ export type XaBridge = {
   // 只把主人新输入的 DeepSeek 密钥交给核心凭据库；不提供读回。
   deepseekLogin(key: string): Promise<void>;
   deepseekModels(endpoint: DeepseekEndpoint, key?: string): Promise<string[]>;
+  deepseekCatalogConsent(): Promise<DeepseekCatalogConsent>;
+  setDeepseekCatalogConsent(on: boolean, binding?: string): Promise<DeepseekCatalogConsent>;
   // 选手联网（docs/design-network.md）：只有总开关，返回整份新设置；核心校验，不合格报中文原因。
   setNetworkAllowed(on: boolean): Promise<Settings>;
   onOpen(callback: (destination: Destination) => void): () => void;

@@ -16,6 +16,17 @@ export type Command = { file: string; args: string[]; env: Record<string, string
 export type Activity = { at: string; kind: 'cmd' | 'edit' | 'read' | 'say'; text: string };
 // 每一步的时间（看管进程边读边记）：steps 是调用工具的步数，toolSeconds 是工具在跑的时间（重叠的只算一次，扣掉休眠）。
 export type Timing = { steps: number; toolSeconds: number };
+// 派活链路校正日志。requestLowerBound 不是供应商账单请求数：Codex 只公开一轮总用量，
+// 只确认有 turn.started 时至少启动过一轮；工具完成数不能作为模型请求下界。
+export type DispatchTrace = {
+  schema?: 2;
+  promptBytes?: number;
+  requestLowerBound: number;
+  requestExact: false;
+  toolFailures?: number;
+  protocolErrors?: number;
+  metadataFallback?: boolean;
+};
 export type Comment = { by: 'owner' | 'lead'; text: string; at: string; handled?: string };
 export type Rating = {
   score?: 1 | 2 | 3 | 4 | 5;
@@ -49,6 +60,12 @@ export type Job = {
   };
   activity?: Activity[]; lastActivityAt?: string; changedFiles?: number;
   timing?: Timing;
+  dispatchTrace?: DispatchTrace;
+  // 派发时冻结连接与实际模型；不含密钥。旧记录缺少此字段时按旧行为运行。
+  deepseekConnection?: import('./deepseek-settings.ts').DeepseekEndpoint;
+  // 会计归属冻结；旧任务缺字段按default，不能随编辑连接切组。
+  deepseekBudgetGroup?: string;
+  deepseekCredentialVersion?: string;
   // 收尾原因（docs/tasks/TASK-008.md）：manual 手动停、stalled 停滞、timed_out 单次总超时、process_error 看管进程异常。
   // 旧记录没有这一字段，读取照常兼容，公开视图里显示成 null。
   termination?: 'manual' | 'stalled' | 'timed_out' | 'process_error';

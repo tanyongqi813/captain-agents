@@ -72,6 +72,16 @@ test('Codex 只有 completed 也算一步，非工具和坏编号不算；EOF �
   assert.deepEqual(p.timing(undefined, at(20)), { steps: 3, toolSeconds: 4 });
 });
 
+test('Codex 派活日志记录请求下界、工具失败和模型元数据回退，不冒充精确请求数', () => {
+  const p = new StreamParser('deepseek-flash');
+  p.feed(line({ type: 'item.completed', item: { id: 'meta', type: 'error', message: 'Model metadata not found. Defaulting to fallback metadata.' } }), at(0));
+  p.feed(line({ type: 'turn.started' }), at(1));
+  p.feed(line({ type: 'item.completed', item: { id: 'ok', type: 'command_execution', status: 'completed', exit_code: 0 } }), at(2));
+  p.feed(line({ type: 'item.completed', item: { id: 'bad', type: 'command_execution', status: 'failed', exit_code: 1 } }), at(3));
+  p.feed(line({ type: 'item.completed', item: { id: 'bad', type: 'command_execution', status: 'failed', exit_code: 1 } }), at(4));
+  assert.deepEqual(p.trace(3656), { schema: 2, promptBytes: 3656, requestLowerBound: 1, requestExact: false, toolFailures: 1, protocolErrors: 1, metadataFallback: true });
+});
+
 test('多个不足一秒的时段合计、扣休眠之后再取整', () => {
   const p = new StreamParser('grok');
   for (const [id, start] of [['a', 0], ['b', 2]] as const) {

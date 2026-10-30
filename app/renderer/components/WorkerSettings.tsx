@@ -36,7 +36,7 @@ const quotaLine = (q: Quota | undefined) => {
 // 设置里的“选手与模型”：按厂家分组（Codex、Grok、Cursor、DeepSeek），组内是一张对齐的表，一行一个模型：
 // 模型 | 中档 | 高档 | 超高档 | 快速版 | 启用。关掉的模型整行变淡，强度和快速版点不动但保留原值。改动交给 change，由设置页统一排队保存。
 export function WorkerSettings({ view, values, deepseek, error, change, configureDeepseek }: {
-  view: Pick<View, 'roster' | 'workers' | 'quota' | 'models' | 'unlisted'>; values: Values['workers'] | undefined; error: string;
+  view: Pick<View, 'roster' | 'workers' | 'quota' | 'models' | 'unlisted' | 'moneyBudget'>; values: Values['workers'] | undefined; error: string;
   deepseek?: DeepseekEndpoint; change: (who: Roster['who'], patch: Change) => void;
   configureDeepseek: (value: DeepseekEndpoint, key: string) => Promise<boolean>;
 }) {
@@ -73,6 +73,8 @@ export function WorkerSettings({ view, values, deepseek, error, change, configur
         return <div className="wk-row" role="group" aria-label={`${shown.name} · ${shown.model}`} data-who={who} data-off={off || undefined} key={who}>
           <span className="wk-model" title={shown.model}><span className="ellip">{shown.model}</span>{gone.has(who) && <Chip tone="warn" title="最近一次检查，这一家的名单里已经没有它；派活会被拦下">已下线</Chip>}</span>
           {ORDER.map(effort => {
+            const dsDefault = who === 'deepseek' ? deepseek?.proReasoning === 'default' : who === 'deepseek-flash' && deepseek?.flashReasoning === 'default';
+            if (dsDefault) return <span key={effort}>{effort === 'high' ? '默认' : ''}</span>;
             if (!entry.efforts.includes(effort)) return <span key={effort} />;
             const on = policy.efforts.includes(effort);
             return <CheckDot key={effort} label={effortText(effort)} checked={on} disabled={off} locked={on && chosen === 1 ? LAST_EFFORT : undefined}
@@ -86,6 +88,6 @@ export function WorkerSettings({ view, values, deepseek, error, change, configur
     {/* 没列出来的厂家（这台电脑上没找到程序，或这种系统上平台还关不住它）：一行淡色小字写原因（docs/ui-spec.md 第 10 节）。 */}
     {view.unlisted.length > 0 && <p className="wk-unlisted">{view.unlisted.map(u => u.reason).join('；')}。</p>}
     {picked && <ModelPicker key={picked.channel} channel={picked} updated={view.models.at} close={() => setPicking(null)} />}
-    {editingDeepseek && <DeepseekSettings value={deepseek} close={() => setEditingDeepseek(false)} save={configureDeepseek} />}
+    {editingDeepseek && <DeepseekSettings value={deepseek} moneyStatus={view.moneyBudget} catalog={view.models.channels.find(channel => channel.channel === 'deepseek')} close={() => setEditingDeepseek(false)} save={configureDeepseek} />}
   </div>;
 }

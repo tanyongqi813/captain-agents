@@ -2,13 +2,16 @@ import { listedProviders, listedWho, unlistedProviders } from './listed.ts';
 import type { ListedOptions } from './listed.ts';
 import { codexEndpoint } from './endpoint.ts';
 import { readModelsCache, viewModels } from './models.ts';
+import { readDeepseekCatalog } from './deepseek-models.ts';
+import { readMoneyStatus } from './money-budget.ts';
+import { deepseekBudgetForGroup } from './deepseek-settings.ts';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { paths, safeName } from './paths.ts';
 import { interruption, listJobs } from './job.ts';
 import type { Job, Batch } from './job.ts';
 import { alive, readOptional, hasCode } from './fsx.ts';
-import { workerDisplay as workers, keptWhos, spec, allowedEfforts, supportsFast, isWho } from './roster.ts';
+import { workerDisplay as workerDefaults, keptWhos, spec, allowedEfforts, supportsFast, isWho } from './roster.ts';
 import { pendingOwnerSays, readChannel, readTeam, teamsDir } from './team.ts';
 import type { ChannelMessage, Team } from './team.ts';
 import { checkFor, verifyState } from './verify.ts';
@@ -41,6 +44,20 @@ function projectConfig(parsed: Record<string, unknown>): ViewProject['config'] {
 export async function buildView(options: ListedOptions = {}): Promise<View> {
   const settings = await readSettings();
   const models = viewModels(settings.models, await readModelsCache());
+  const directory = await readDeepseekCatalog(settings.deepseek);
+  const deepseekIds = { deepseek: settings.deepseek.proModel, 'deepseek-flash': settings.deepseek.flashModel };
+  const channel = models.channels.find(c => c.channel === 'deepseek');
+  if (channel) {
+    channel.at = directory?.fetchedAt ?? null;
+    channel.error = directory?.stale ? '目录已过期，请在编辑中重新获取模型。' : null;
+    channel.models = channel.models.map(m => {
+      const id = deepseekIds[m.who as keyof typeof deepseekIds];
+      return id ? { ...m, model: id, shown: id, gone: !!directory?.accountVerified && !directory.models.includes(id) } : m;
+    });
+  }
+  const shownWorkers = { ...workerDefaults };
+  for (const who of ['deepseek', 'deepseek-flash'] as const) shownWorkers[who] = { ...shownWorkers[who], model: deepseekIds[who] };
+  const workers = shownWorkers;
   const p = paths();
   const recorded = await listJobs().catch(error => { if (hasCode(error, 'ENOENT')) return []; throw error; });
   const jobs = recorded.map(job => {
@@ -52,10 +69,23 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
   // 群成员的活：名字跟着群走（群改了名，各处显示的都是现名，不是派活那一刻抄下来的旧名）。
   // “通常多久”是按整件活统计的，群里的一轮不是一回事，不套用。
   const chatOf = new Map(chats.flatMap(chat => chat.members.flatMap(m => m.job ? [[m.job, chat] as const] : [])));
-  const rows = jobs.map(job => {
+  const rows = await Promise.all(jobs.map(async job => {
     const chat = chatOf.get(job.id), row = publicJob(job, chat ? null : typicalFor(typical, job));
+    if (['deepseek', 'deepseek-flash'].includes(job.who) && ['stopped', 'failed'].includes(job.state)) {
+      try {
+        const round = job.resume?.round ?? 1;
+        if (!Number.isSafeInteger(round) || round < 1) throw new Error('无有效尝试');
+        const evidence = JSON.parse(await readOptional(join(p.jobs, job.id, 'money-stop-' + round + '.json')));
+        if (typeof evidence.at === 'string' && Number.isFinite(Date.parse(evidence.at))
+          && Date.parse(evidence.at) >= Date.parse(job.started ?? job.created)
+          && Date.parse(evidence.at) <= Date.parse(job.ended ?? '')
+          && evidence.group === (job.deepseekBudgetGroup ?? 'default')
+          && typeof evidence.reason === 'string' && evidence.reason.length > 0
+          && [evidence.status?.spent, evidence.status?.reserved].every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0)) row.moneyStopAt = evidence.at;
+      } catch { /* 缺失或损坏证据不猜费用停止，也不暴露原文。 */ }
+    }
     return chat ? { ...row, title: chat.title, summary: `处理「${chat.title}」群里的安排` } : row;
-  });
+  }));
   const batches: Batch[] = [];
   const names = await readdir(p.batches).catch(error => { if (hasCode(error, 'ENOENT')) return []; throw error; });
   for (const name of names.filter(n => n.endsWith('.json'))) {
@@ -95,13 +125,16 @@ export async function buildView(options: ListedOptions = {}): Promise<View> {
     }));
   }
   const slimmed = jobs.filter(job => job.slimmed);
-  return { settings: { keepAwake, notifications, storage, limits, workers: policy, networkAllowed: settings.networkAllowed },
+  return { moneyBudget: await (async () => {
+    const group = settings.deepseek.budgetGroup ?? 'default';
+    return readMoneyStatus(Date.now(), deepseekBudgetForGroup(settings.deepseek, group), group);
+  })().catch(() => null), settings: { keepAwake, notifications, storage, limits, workers: policy, networkAllowed: settings.networkAllowed },
     ...await autopilotView(),
     dashboard: ranges.flatMap(range => ['', ...projectNames].map(project => dashboard(jobs, range, project))),
     storage: { slimmedJobs: slimmed.length, freedBytes: slimmed.reduce((sum, job) => sum + job.slimmed!.bytes, 0), due: slimCandidates(jobs, storage.days).length },
     updated: new Date().toISOString(), selfcheck: await readSelfcheck(),
     unlisted: unlistedProviders(listed),
-    roster: keptWhos.filter(who => listedWho(listed, who)).map(who => ({ who, name: spec(who).name, model: spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })),
+    roster: keptWhos.filter(who => listedWho(listed, who)).map(who => ({ who, name: spec(who).name, model: shownWorkers[who]?.model ?? spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })),
     stats: stats(jobs), profiles: profiles(jobs), quota: boardQuota(quota).filter(p => listed.some(l => l.icon === p.icon && l.reason === null) && !(p.icon === 'codex' && endpoint.custom)), quotaAt: quota?.queriedAt ?? null, workers: { ...workers }, projects: projectNames.map(name => ({ name, label: labels.get(name) ?? name, repo: repos.get(name) ?? null, archived: archived.has(name), config: configs.get(name) ?? null })), plans, jobs: rows, batches,
     teams: await viewTeams(),
     chats,
@@ -126,7 +159,11 @@ function publicJob(job: Job, typical: number | null): ViewJob {
     plan: job.plan ? { taskId: job.plan.taskId, spec: job.plan.spec } : null,
     ...(job.autopilot ? { autopilot: { run: job.autopilot.run } } : {}),
     termination: job.termination ?? null,
-    activity: job.activity ?? [], timing: job.timing ?? null };
+    activity: job.activity ?? [], timing: job.timing ?? null,
+    ...((job.dispatchTrace || job.timing || job.usage) ? { dispatchTrace: {
+      ...(job.dispatchTrace?.schema === 2 ? job.dispatchTrace : { ...(job.dispatchTrace?.promptBytes === undefined ? {} : { promptBytes: job.dispatchTrace.promptBytes }), requestLowerBound: 0, requestExact: false as const }),
+      usage: job.usage ?? null,
+    } } : {}) };
 }
 
 const CHANNEL_KEEP = 200;

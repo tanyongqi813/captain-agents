@@ -37,7 +37,10 @@ import { startDesktop } from './startup.ts';
 import { slimScheduler } from './slim.ts';
 import { slimOld } from '../../src/core/slim.ts';
 import { loginDeepseek } from '../../src/core/workers.ts';
-import { queryDeepseekModels } from '../../src/core/deepseek-models.ts';
+import { refreshDeepseekCatalog } from '../../src/core/deepseek-models.ts';
+import { catalogRefreshController } from '../../src/core/deepseek-catalog-loop.ts';
+import { deepseekCatalogBridge } from './deepseek-catalog-bridge.ts';
+import { modelErrorRecoveryController } from '../../src/core/deepseek-model-recovery.ts';
 // Electron 自带的“原始文件函数”：不把路径里的 .asar 当虚拟目录（更新包里有 app.asar，见 update-install.ts）。
 import originalFs from 'original-fs';
 import { desktopUpdater } from './update-runtime.ts';
@@ -102,6 +105,9 @@ let window: BrowserWindow | null = null;
 let opening: Promise<void> | undefined;
 let closeWatch: (() => void) | undefined;
 let modelSchedule: ReturnType<typeof modelsScheduler> | undefined;
+let catalogLoop: ReturnType<typeof catalogRefreshController> | undefined;
+let modelRecovery: ReturnType<typeof modelErrorRecoveryController> | undefined;
+let catalogTimer: ReturnType<typeof setInterval> | undefined;
 let quotaTimer: ReturnType<typeof setInterval> | undefined;
 const QUOTA_EVERY_MS = 15 * 60_000;
 let slimmer: ReturnType<typeof slimScheduler> | undefined;
@@ -218,6 +224,9 @@ else {
   app.on('before-quit', event => {
     closeWatch?.();
     modelSchedule?.stop();
+    catalogLoop?.stop();
+    modelRecovery?.stop();
+    if (catalogTimer) clearInterval(catalogTimer);
     if (quotaTimer) clearInterval(quotaTimer);
     ownerNotifier?.stop();
     slimmer?.stop();
@@ -430,10 +439,15 @@ else {
       if (args.length !== 1 || typeof args[0] !== 'string') throw new Error('DeepSeek API 密钥参数不对。');
       return loginDeepseek(args[0]);
     });
+    const catalogConsent = deepseekCatalogBridge((event: import('electron').IpcMainInvokeEvent) => trustedSender(event, window, pageUrl), async () => {
+      await catalogLoop?.poll(); publish(await readDesktopView());
+    });
+    ipcMain.handle(channels.deepseekCatalogConsent, catalogConsent.read);
+    ipcMain.handle(channels.deepseekCatalogConsentSet, catalogConsent.set);
     ipcMain.handle(channels.deepseekModels, (event, ...args: unknown[]) => {
       guard(event);
       if ((args.length !== 1 && args.length !== 2) || typeof args[0] !== 'object' || (args[1] !== undefined && typeof args[1] !== 'string')) throw new Error('获取 DeepSeek 模型的参数不对。');
-      return queryDeepseekModels(args[0] as import('../../src/core/deepseek-settings.ts').DeepseekEndpoint, args[1] as string | undefined, electronRequest);
+      return refreshDeepseekCatalog(args[0] as import('../../src/core/deepseek-settings.ts').DeepseekEndpoint, args[1] as string | undefined, electronRequest);
     });
     ipcMain.handle(channels.networkAllowed, (event, ...args: unknown[]) => { guard(event); return settings.allowNetwork(args); });
     Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -463,6 +477,10 @@ else {
     if (!e2eHidden) {
       modelSchedule = modelsScheduler({ readCache: readModelsCache }, models, console.error);
       modelSchedule.start();
+      catalogLoop = catalogRefreshController(electronRequest, async () => { publish(await readDesktopView()); }, console.error);
+      modelRecovery = modelErrorRecoveryController(electronRequest, async () => { publish(await readDesktopView()); }, console.error);
+      void catalogLoop.poll();
+      catalogTimer = setInterval(() => { void catalogLoop?.poll(); void modelRecovery?.poll(); }, 2000);
     }
     // 应用开着时每 15 分钟查一次额度；启动时数据已经超过 15 分钟也查一次（冒烟测试里不查）。
     quotaTimer = setInterval(() => { void quota.auto(console.error); }, QUOTA_EVERY_MS);

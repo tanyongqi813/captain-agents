@@ -3,7 +3,7 @@ import nodePath, { posix, win32 } from 'node:path';
 import { relativeInside } from './platform.ts';
 import { StringDecoder } from 'node:string_decoder';
 import { hasCode } from './fsx.ts';
-import type { Activity, Who, Usage, Timing } from './job.ts';
+import type { Activity, DispatchTrace, Who, Usage, Timing } from './job.ts';
 import { isolationOf } from './roster.ts';
 import type { Isolation } from './roster.ts';
 import { sleptSeconds } from './duration.ts';
@@ -42,6 +42,11 @@ export class StreamParser {
   private say = '';
   private fallback = '';
   private tools = new Map<string, { from: number; to?: number }>();
+  private turnStarted = false;
+  private toolCompletions = new Set<string>();
+  private toolFailures = 0;
+  private protocolErrors = 0;
+  private metadataFallback = false;
   private pathImplementation: typeof nodePath;
 
   // 输出格式跟着隔离走（同一家命令行的几位选手格式一样），不按选手名写死。
@@ -112,8 +117,20 @@ export class StreamParser {
   private row(value: unknown, at: string) {
     const row = object(value), item = object(row.item);
     if (this.format === 'codex') {
+      if (row.type === 'turn.started') { this.turnStarted = true; this.revision++; }
+      if (row.type === 'item.completed' && item.type === 'error') {
+        this.protocolErrors++;
+        if (/metadata.*not found|fallback metadata/i.test(text(item.message))) this.metadataFallback = true;
+        this.revision++;
+      }
       if ((item.type === 'command_execution' || item.type === 'file_change') && (row.type === 'item.started' || row.type === 'item.completed')) {
         this.tool(item.id, row.type === 'item.completed', at, true);
+        if (row.type === 'item.completed') {
+          const id = text(item.id);
+          const fresh = !!id && !this.toolCompletions.has(id);
+          if (id) this.toolCompletions.add(id);
+          if (fresh && (item.status === 'failed' || (typeof item.exit_code === 'number' && item.exit_code !== 0))) this.toolFailures++;
+        }
       }
       if (row.type === 'item.started' && item.type === 'command_execution') this.add('cmd', unwrapCommand(text(item.command)), at);
       if (row.type === 'item.completed' && item.type === 'file_change' && Array.isArray(item.changes)) this.add('edit', item.changes.map((c: unknown) => this.path(object(c).path)).filter(Boolean).join('、'), at, false);
@@ -211,6 +228,16 @@ export class StreamParser {
   result(final = '') {
     const report = this.format === 'codex' ? final : this.format === 'grok' || this.format === 'kimi' ? (this.tailText.trim() ? this.tailText : this.allText) : (this.tailText.trim() ? this.tailText : this.fallback);
     return { report: report.trim(), usage: this.usage, activity: this.activity.slice(), lastActivityAt: this.activity.at(-1)?.at };
+  }
+  trace(promptBytes?: number): DispatchTrace {
+    return {
+      schema: 2,
+      ...(promptBytes === undefined ? {} : { promptBytes }),
+      // 一次模型响应可以并行调用多个工具；工具数不能推导请求次数。
+      requestLowerBound: this.turnStarted ? 1 : 0,
+      requestExact: false,
+      ...(this.format === 'codex' ? { toolFailures: this.toolFailures, protocolErrors: this.protocolErrors, metadataFallback: this.metadataFallback } : {}),
+    };
   }
 }
 

@@ -4,8 +4,10 @@ import type { Effort, ModelsConfig, Vendor } from './roster.ts';
 import { discoveredModel, readModelsCache, timestamp } from './model-cache.ts';
 import type { ModelsCache } from './model-cache.ts';
 import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { paths } from './paths.ts';
-import { readOptional, withLock, writeJson } from './fsx.ts';
+import { hasCode, readOptional, withLock, writeJson } from './fsx.ts';
 import { effectiveWorkers, validateWorkersPatch } from './policy.ts';
 import type { WorkersPolicy } from './policy.ts';
 import { relativePath } from './project.ts';
@@ -89,6 +91,71 @@ export async function readSettings(): Promise<Settings> {
   return current;
 }
 
+// 收费路径必须严格读取原始配置，不能把损坏配置当成预算已关闭。
+export async function readDeepseekRuntimeSettings(): Promise<DeepseekEndpoint> {
+  let raw: string;
+  try { raw = await readFile(join(paths().home, 'config.json'), 'utf8'); }
+  catch (error) {
+    if (hasCode(error, 'ENOENT')) return effectiveDeepseekEndpoint(undefined);
+    throw new Error('设置文件无法读取，DeepSeek 已暂停调用。');
+  }
+  let config: unknown;
+  try { config = JSON.parse(raw); }
+  catch { throw new Error('设置文件损坏，DeepSeek 已暂停调用，请修复设置后重试。'); }
+  if (!object(config)) throw new Error('设置文件格式不正确，DeepSeek 已暂停调用。');
+  if (config.deepseek === undefined) return effectiveDeepseekEndpoint(undefined);
+  try { return deepseekEndpoint(config.deepseek); }
+  catch { throw new Error('DeepSeek 连接或预算配置不合法，已暂停调用，请检查设置。'); }
+}
+
+export type DeepseekCatalogConsent = { enabled: boolean; binding: string | null; grant: string | null };
+async function catalogBinding(): Promise<string | null> {
+  try {
+    const endpoint = await readDeepseekRuntimeSettings();
+    const { deepseekCredentialVersion } = await import('./deepseek-credentials.ts');
+    const version = await deepseekCredentialVersion(); // 仅文件元数据，不读密钥正文。
+    return createHash('sha256').update(JSON.stringify([endpoint.baseUrl, endpoint.wireApi, version])).digest('hex');
+  } catch { return null; }
+}
+export async function readDeepseekCatalogConsent(): Promise<DeepseekCatalogConsent> {
+  const binding = await catalogBinding(), stored = (await readConfig()).deepseekCatalogRefresh;
+  const valid = binding !== null && object(stored) && Object.keys(stored).length === 2
+    && stored.binding === binding && typeof stored.grant === 'string'
+    && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(stored.grant);
+  return { enabled: valid, binding, grant: valid ? stored.grant as string : null };
+}
+// 回调只用于短暂的请求发起或目录写入，禁止等待网络或再次获取设置锁。
+// 目录调用方固定先目录锁、后本设置锁；设置保存路径不获取目录锁。
+export async function withDeepseekCatalogConsent<T>(expected: DeepseekCatalogConsent, action: (endpoint: DeepseekEndpoint) => Promise<T>): Promise<T> {
+  const snapshot = { ...expected };
+  return withLock(paths().home, async () => {
+    const current = await readDeepseekCatalogConsent();
+    if (!snapshot.enabled || !snapshot.binding || !snapshot.grant || !current.enabled
+      || current.binding !== snapshot.binding || current.grant !== snapshot.grant) {
+      throw new Error('自动获取模型目录的授权或连接已改变，已拒绝本次操作。');
+    }
+    return action(await readDeepseekRuntimeSettings());
+  });
+}
+// 仅供未来显式主人操作的专门入口；普通设置补丁无法开启。调用方须提交它先前看到的身份，
+// 不接受临时密钥，也不在开启时查询模型。真实请求/目录提交仍须再次核对binding和grant。
+export async function setDeepseekCatalogConsent(on: unknown, expectedBinding?: string): Promise<void> {
+  if (typeof on !== 'boolean') throw new Error('自动获取模型目录只能是开或关。');
+  await withLock(paths().home, async () => {
+    // 坏配置不能被开关操作悄悄覆盖为默认设置。
+    await readDeepseekRuntimeSettings();
+    const config = await readConfig();
+    if (!on) delete config.deepseekCatalogRefresh;
+    else {
+      const binding = await catalogBinding();
+      if (!binding || binding !== expectedBinding) throw new Error('保存的连接或凭据已改变，请重新确认后开启自动获取模型目录。');
+      config.deepseekCatalogRefresh = { binding, grant: randomUUID() };
+      if (binding !== await catalogBinding()) throw new Error('连接或凭据在确认期间改变，请重试。');
+    }
+    await writeJson(join(paths().home, 'config.json'), config);
+  });
+}
+
 // 回调在设置锁内读取并计算补丁，避免并发读改写丢失更新。
 export async function writeSettings(update: SettingsPatch | ((current: Settings) => SettingsPatch)): Promise<void> {
   await withLock(paths().home, async () => {
@@ -112,7 +179,11 @@ export async function writeSettings(update: SettingsPatch | ((current: Settings)
     const archived = patch.archivedProjects ? { archivedProjects: tidyArchived(patch.archivedProjects) } : {};
     const deepseek = patch.deepseek ? { deepseek: deepseekEndpoint(patch.deepseek) } : {};
     const { network: _network, ...retained } = config;
-    await writeJson(join(paths().home, 'config.json'), { ...retained, ...current, ...patch, ...archived, ...deepseek, workers });
+    const next: Record<string, unknown> = { ...retained, ...current, ...patch, ...archived, ...deepseek, workers };
+    if (deepseek.deepseek && (deepseek.deepseek.baseUrl !== current.deepseek.baseUrl || deepseek.deepseek.wireApi !== current.deepseek.wireApi)) {
+      delete next.deepseekCatalogRefresh;
+    }
+    await writeJson(join(paths().home, 'config.json'), next);
   });
 }
 

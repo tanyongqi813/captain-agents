@@ -139,7 +139,8 @@ test('看板提供完整策略和按 roster 排序的能力，workers 命令与�
   await writeSettings({ workers: { codex: { ...normal(), enabled: false }, grok: normal() } });
   const view = await buildView();
   assert.deepEqual(view.settings.workers, (await readSettings()).workers);
-  assert.deepEqual(view.roster, whos.map(who => ({ who, name: spec(who).name, model: spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })));
+  const deepseek = (await readSettings()).deepseek;
+  assert.deepEqual(view.roster, whos.map(who => ({ who, name: spec(who).name, model: who === 'deepseek' ? deepseek.proModel : who === 'deepseek-flash' ? deepseek.flashModel : spec(who).shown, efforts: allowedEfforts(who), fastSupported: supportsFast(who) })));
   assert.deepEqual(view.roster[0].efforts, ['medium', 'high', 'xhigh']);
   const result = await c.cli(['workers']); assert.equal(result.code, 0, result.stderr);
   const rows = result.stdout.split('\n');

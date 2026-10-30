@@ -1,4 +1,4 @@
-import type { Activity, Batch, Job, Rating, Timing, Who } from './job.ts';
+import type { Activity, Batch, DispatchTrace, Job, Rating, Timing, Who } from './job.ts';
 import type { Stat } from './stats.ts';
 import type { Profile, TagKind } from './profiles.ts';
 import type { Provider } from './quota.ts';
@@ -56,6 +56,8 @@ export type ViewJob = Pick<Job, 'id' | 'batch' | 'project' | 'who' | 'model' | '
   activity: Activity[];
   // 每一步的时间；老任务没有记录时为 null。给人看的话用 src/core/duration.ts 的 describeTiming。
   timing: Timing | null;
+  dispatchTrace?: DispatchTrace & { usage: Job['usage'] | null };
+  moneyStopAt?: string;
 };
 // 设置“选手与模型 → 管理模型”用的数据（docs/design-models.md）。每个通道一组；models = 最近发现的名单 ∪ 这个通道已有的选手。
 // kept：主人保留着（会出现在选手表里）；builtin：内置选手；fresh：主人上次保存选择之后新冒出来的（标“新”）；
@@ -120,10 +122,11 @@ export type View = {
   selfcheck: { ok: boolean | null; at: string | null; note: string };
   // at：这家额度的数据时间；failed：这次没查到（bars 里是上一次的数据，at 也是上一次的时间）。
   // extraUsage 只有 Kimi 可能有：加油包（独立付费）元数据，只作文字展示，不画百分比、不进额度环、不影响派发。
-  quota: { name: string; icon: Provider; plan: string | null; at: string | null; failed?: true; extraUsage?: { enabled: boolean | null; spent: number | null; monthlyLimit: number | null; balance: number | null; currency: string | null } | null; bars: {
+  quota: { name: string; icon: Provider; plan: string | null; at: string | null; failed?: true; failureReason?: string; extraUsage?: { enabled: boolean | null; spent: number | null; monthlyLimit: number | null; balance: number | null; currency: string | null } | null; bars: {
     label: string; used: number | null; approx?: boolean; reset: string | null;
   }[] }[];
   quotaAt: string | null;
+  moneyBudget?: import('./money-budget.ts').MoneyStatus | null;
   stats: Stat[];
   profiles: Profile[];
   workers: Record<Who, { name: string; model: string; icon: string; badge?: string }>;

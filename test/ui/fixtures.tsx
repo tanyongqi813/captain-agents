@@ -140,6 +140,8 @@ export const fixtureBridge = (extra: Partial<XaBridge> = {}): XaBridge => ({
   setSettings: vi.fn(async patch => ({ keepAwake: true, notifications: true, appearance: 'system' as const, openAtLogin: false, storage: { slim: true, days: 14 as const }, limits: { maxRunning: 12, quotaStop: 80 as const }, networkAllowed: false, ...patch, workers: { ...structuredClone(workerPolicies), ...patch.workers } })),
   deepseekLogin: vi.fn(async () => {}),
   deepseekModels: vi.fn(async () => ['deepseek-chat', 'deepseek-reasoner']),
+  deepseekCatalogConsent: vi.fn(async () => ({ enabled: false, binding: null, grant: null })),
+  setDeepseekCatalogConsent: vi.fn(async () => ({ enabled: false, binding: null, grant: null })),
   setNetworkAllowed: vi.fn(async () => { throw new Error('测试没有准备联网保存'); }),
   onOpen: () => () => {}, getView: vi.fn(async () => fixtureView()), onView: () => () => {},
   projectChoose: vi.fn(async () => null),

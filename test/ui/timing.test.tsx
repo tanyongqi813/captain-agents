@@ -71,6 +71,16 @@ test('详情：句子当纯文字显示', () => {
   expect(document.querySelector('.timing-note')!.children).toHaveLength(0);
 });
 
+test('详情：派活流程日志区分请求下界、缺失逐轮用量和可用的缓存比例', () => {
+  show({ dispatchTrace: { promptBytes: 3656, requestLowerBound: 14, requestExact: false, toolFailures: 1, protocolErrors: 1, metadataFallback: true,
+    usage: { read: 62_000, cached: 0, out: 3920 } } });
+  expect(screen.getByRole('heading', { name: '派活流程日志' })).toBeTruthy();
+  expect(screen.getByText('模型请求：至少 14 次（通道未提供精确逐次请求数）')).toBeTruthy();
+  expect(screen.getByText('累计输入：6.2 万 token')).toBeTruthy();
+  expect(screen.getByText('缓存命中：0%（0 token）')).toBeTruthy();
+  expect(screen.getByText(/模型元数据缺失/)).toBeTruthy();
+});
+
 // ---- 表现页 ----
 const stat = (extra: Partial<Stat> = {}): Stat => ({ who: 'codex', fast: false, kind: '实现', count: 8, small: false, doneRate: 1, verified: 4, passed: 3, verifyRate: .75, adopted: 2, adoptRate: .25,
   secondsSamples: 8, averageSeconds: 300, quotaSamples: 0, averageQuotaDelta: null, ...extra });

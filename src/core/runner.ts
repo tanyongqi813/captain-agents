@@ -1,5 +1,10 @@
 import { nodeCommand, nodeRunner, externalEnvironment } from './node-runtime.ts';
-import { readSettings } from './settings.ts';
+import { readSettings, readDeepseekRuntimeSettings } from './settings.ts';
+import { observeMoney, readMoneyStatus } from './money-budget.ts';
+import { deepseekBudgetForGroup } from './deepseek-settings.ts';
+import { prepareDeepseekCredentials } from './deepseek-credentials.ts';
+import { assertDeepseekRuntimeReasoning } from './deepseek-reasoning-runtime.ts';
+import { recordDeepseekModelError } from './deepseek-model-recovery.ts';
 import { checkChoice } from './policy.ts';
 import { spawn } from 'node:child_process';
 import { open, stat } from 'node:fs/promises';
@@ -8,6 +13,15 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { jobDir } from './paths.ts';
 import { updateJob, finish, listJobs, readJob } from './job.ts';
 import type { Job } from './job.ts';
+
+async function runtimeMoney(job: Job) {
+  const group = job.deepseekBudgetGroup ?? 'default';
+  const money = deepseekBudgetForGroup(await readDeepseekRuntimeSettings(), group);
+  if ((!money && job.deepseekConnection?.money?.enabled) || (group !== 'default' && !money?.enabled)) {
+    throw new Error('任务所属费用预算组缺失或已关闭，已停止收费调用。');
+  }
+  return money;
+}
 import { LiveProgress } from './live.ts';
 import { writeAtomic, hasCode, readOptional } from './fsx.ts';
 import { saveDiff, worktreeMissing } from './worktree.ts';
@@ -17,7 +31,7 @@ import { readQuotaCache } from './quota.ts';
 import { collectRealSteps } from './real.ts';
 import { cursorToken, resumeCommand, selection } from './workers.ts';
 import { workerEnv, passEnv } from './env.ts';
-import { processSince, assertTreeControl, killTree, treeSpawn } from './platform.ts';
+import { processSince, assertTreeControl, killTree, treeSpawn, finalTreeCleanup } from './platform.ts';
 import { budgetTick, initialBudgetState, DEFAULT_BUDGET } from './budget.ts';
 import type { Budget, BudgetState } from './budget.ts';
 import { projectBudget, loadProject } from './project.ts';
@@ -67,6 +81,27 @@ async function watch(id: string, progress: LiveProgress, signal: AbortSignal, bu
         } catch { /* 元数据读不到：少一个信号，总时限兜底。 */ }
       }
       const job = await readJob(id);
+      if (job.who === 'deepseek' || job.who === 'deepseek-flash') {
+        try {
+          const money = await runtimeMoney(job);
+          const reason = await observeMoney(id, money, progress.parser.result().usage);
+          if (reason) {
+            const group = job.deepseekBudgetGroup ?? 'default';
+            try {
+              const evidence = join(dir, 'money-stop-' + (job.resume?.round ?? 1) + '.json');
+              if (!await readOptional(evidence)) await writeAtomic(evidence, JSON.stringify({
+                at: new Date().toISOString(), reason, group, hard: money?.hard ?? null, soft: money?.soft ?? null,
+                status: await readMoneyStatus(Date.now(), money, group),
+              }, null, 2) + '\n');
+            } catch { console.error('费用停止证据未能保存；仍停止任务，请核对账本。'); }
+            await updateJob(id, j => { j.stopRequested = true; j.error = reason; });
+            onStop();
+          }
+        } catch {
+          await updateJob(id, j => { j.stopRequested = true; j.error = '费用看管无法核对账本，已停止任务。'; });
+          onStop();
+        }
+      }
       const tick = budgetTick(budget, state, { now: at, startedAt, sleeps: job.sleeps ?? [], lastActivityAt: activityAt, logChangedAt });
       state = tick.state;
       if (tick.event === 'stall-warning') {
@@ -91,13 +126,15 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
   let budget: Budget = { ...DEFAULT_BUDGET };
   // 停滞/总超时命中时记下结构化终止原因和给人看的说明；手动停止保持 undefined（收尾时记 manual）。
   let termination: Job['termination'] | undefined, budgetNote: string | undefined;
+  let releaseDeepseekCredentials: (() => Promise<void>) | undefined;
   const message = (error: unknown) => {
     try { return String(error instanceof Error ? error.message : error).slice(0, 2000); }
     catch { return '未知异常'; }
   };
   const addFailure = (text: string) => { failure = failure ? `${failure} ${text}` : text; };
+  const finalizeWorkerTree = finalTreeCleanup();
   const killWorker = () => {
-    try { killGroup(workerPid, 'SIGKILL', workerSince, workerExitedAt); }
+    try { finalizeWorkerTree(workerPid, workerSince, workerExitedAt); }
     catch (error) { addFailure(`停止选手进程组失败：${message(error)}`); }
   };
   let wakeFatal!: () => void;
@@ -141,6 +178,12 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
     });
     if (claimed.state !== 'running' || claimed.pid !== process.pid) return;
     job = claimed;
+    if (job.who === 'deepseek' || job.who === 'deepseek-flash') {
+      const money = await runtimeMoney(job);
+      if (job.resume && money?.enabled) throw new Error('每日费用预算开启时请重新派活，不续接已结算的会话。');
+      const reason = await observeMoney(id, money, undefined);
+      if (reason) throw new Error(reason);
+    }
     checkChoice((await readSettings()).workers, selection(`${job.who}:${job.effort}${job.fast ? ':fast' : ''}`));
     await reconcileSafely();
     if (!job.command) throw new Error('没有保存选手命令，请重新派发。');
@@ -148,6 +191,7 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
     catch { console.error('读取项目执行预算失败，按缺省 20/5/120 分钟执行。'); }
     // 第 2 轮起：command 已由共用准备函数按本轮平台重建，这里只做既有的续接变形。
     const cmd = job.resume ? resumeCommand(job) : job.command, dir = jobDir(id);
+    assertDeepseekRuntimeReasoning(job, cmd);
     const handles = [];
     const controller = new AbortController();
     let polling: Promise<void> | undefined;
@@ -161,6 +205,12 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
         // 名字带密钥字样的环境变量不交给选手（规则在 env.ts）；平台设的照给，这件活点名不要的再去掉。
         // 点名放行的变量（主人的 Codex 配置里放钥匙的那一个）：过滤之后再补回，只给选手的主程序；值不进任务记录。
         const env = passEnv(externalEnvironment(workerEnv(process.env, cmd.env, cmd.unset)), cmd.pass, process.env, [...Object.keys(cmd.env), ...(cmd.unset ?? [])]);
+        if ((job.who === 'deepseek' || job.who === 'deepseek-flash') && !process.env.XAGENTS_FAKE_WORKER) {
+          if (!job.deepseekConnection) throw new Error('旧任务缺少 DeepSeek 连接快照，请重新派活。');
+          const credentials = await prepareDeepseekCredentials(job.id, job.deepseekConnection, job.deepseekCredentialVersion);
+          releaseDeepseekCredentials = credentials.release;
+          env.CODEX_HOME = credentials.home;
+        }
         // Cursor 的登录在隔离外现取，只放进这次进程的环境，不进任务记录（见 workers.ts 的 cursorToken）。
         // 必须放在上面那步过滤之后：它的名字带 TOKEN，先加再过滤就会被去掉，Cursor 就成了没登录。
         // 替身模式下没指定假的 security 就不取，测试不碰真钥匙串。
@@ -189,6 +239,7 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
         if ((await updateJob(id, j => { j.workerPid = workerPid; j.workerSince = workerSince; })).stopRequested) stop();
         releaseAwake = await keepAwake();
         progress = new LiveProgress(job);
+        if (input) progress.setPromptBytes((await input.stat()).size);
         polling = watch(id, progress, controller.signal, budget, Date.parse(job.started!), now, stop, onBudget);
         // 在主流程等选手退出期间也及时接住采集任务的拒绝。
         polling.catch(unhandled);
@@ -220,6 +271,19 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
         catch (e) { console.error(`收尾读取进度失败：${(e as Error).message}`); }
         const dir = jobDir(id);
         const parsed = progress.parser.result(await readOptional(join(dir, 'final.md')));
+        try { const diagnostic = await recordDeepseekModelError(job); if (diagnostic) addFailure(diagnostic); }
+        catch { addFailure('模型错误诊断未能保存，请检查任务日志。'); }
+        if (job.deepseekConnection?.money?.enabled) {
+          try {
+            const money = await runtimeMoney(job);
+            await observeMoney(id, money, parsed.usage);
+            await observeMoney(id, money, !stopping && code === 0 ? parsed.usage : undefined, true);
+          } catch {
+            // 财务异常必须记录为失败，但不能阻断报告和补丁的独立保存。
+            addFailure('费用结算失败，账本待核对；任务报告和改动仍会保存。');
+            console.error('费用结算失败，账本待核对。');
+          }
+        }
         await writeAtomic(join(dir, 'report.md'), parsed.report ? parsed.report + '\n' : '');
         if (await worktreeMissing(job)) console.error('副本已不在，没法保存改动。');
         else try { await saveDiff(job); }
@@ -229,7 +293,7 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
           collectRealSteps(j, parsed.report);
           progress!.apply(j); j.exit = code;
           if (fatalFailure) { j.termination = 'process_error'; finish(j, 'failed', [fatalFailure, failure].filter(Boolean).join(' ')); }
-          else if (stopping || j.stopRequested) { j.termination = termination ?? 'manual'; finish(j, 'stopped', termination ? budgetNote : undefined); }
+          else if (stopping || j.stopRequested) { j.termination = termination ?? 'manual'; finish(j, 'stopped', termination ? budgetNote : j.error); }
           else finish(j, !failure && code === 0 && parsed.report ? 'done' : 'failed', failure || (code !== 0 ? `选手退出码为 ${code}，请查看 stderr.log 和原始输出。` : !parsed.report ? '选手没有留下报告，请查看原始输出后运行 xagents collect。' : undefined));
         });
       }
@@ -252,6 +316,8 @@ export async function runWorker(id: string, options?: { now?: () => number }) {
           finish(j, 'failed', [fatalFailure, failure].filter(Boolean).join(' '));
         });
       } finally {
+        try { await releaseDeepseekCredentials?.(); }
+        catch { console.error('DeepSeek 临时认证文件未能清理，请检查私有凭据目录权限。'); }
         process.off('SIGTERM', stop); process.off('SIGINT', stop);
         process.off('uncaughtException', uncaught); process.off('unhandledRejection', unhandled);
       }
