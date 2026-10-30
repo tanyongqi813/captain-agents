@@ -1,6 +1,6 @@
 # Execution Capsule — TASK-018 / attempt-06
 
-- dispatch_state: `待确认`
+- dispatch_state: `CLOSED`
 - handoff_contract: `1`
 - planning_source: `docs/tasks/TASK-018.md`
 - task_id: `TASK-018`

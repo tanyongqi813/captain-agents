@@ -1,11 +1,11 @@
 # TASK-018 — 设置成本资料与额度未知时的预算
 
 - handoff_contract: `1`
-- status: `CHANGES_REQUESTED`
+- status: `IN_PROGRESS`
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-017[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `06`
+- current_attempt: `16`
 
 ## 业务结果
 
@@ -91,4 +91,5 @@ npm run build
 
 ## 微批边界
 
-待确认（旧文档未提供独立字段；迁移器未推断内容）。
+- expected_primary_files: `4`
+- exception_reason: `成本设置整份保存的原子接口迁移，核心锁内比较、后台参数校验、桥类型与界面提交读取基线必须同时接线，不能保留无基线覆盖入口。`

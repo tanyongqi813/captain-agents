@@ -21,7 +21,7 @@
 | [TASK-015](tasks/TASK-015.md) | 按完成总成本生成派活参考 | PASSED | P2 | High | TASK-017 | none |
 | [TASK-016](tasks/TASK-016.md) | 正常复审沉淀评分与难度证据 | PASSED | P2 | High | TASK-011, TASK-017 | none |
 | [TASK-017](tasks/TASK-017.md) | 完成成本账本与中转站计价依据 | PASSED | P2 | High | none | none |
-| [TASK-018](tasks/TASK-018.md) | 设置成本资料与额度未知时的预算 | CHANGES_REQUESTED | P1 | High | TASK-017 | attempt-06 |
+| [TASK-018](tasks/TASK-018.md) | 设置成本资料与额度未知时的预算 | IN_PROGRESS | P1 | High | TASK-017 | attempt-16 |
 | [TASK-019](tasks/TASK-019.md) | Kimi 套餐查询与多窗口派发检查 | PASSED | P2 | High | none | none |
 | [TASK-020](tasks/TASK-020.md) | Task Spec 执行边界进入派活题目 | PASSED | P1 | Medium | none | none |
 | [TASK-021](tasks/TASK-021.md) | DeepSeek/Kimi 上下文节流适配 | PASSED | P1 | Medium | TASK-020 | none |
@@ -31,25 +31,29 @@
 | [TASK-025](tasks/TASK-025.md) | 直接消费执行胶囊派活 | PASSED | P1 | High | TASK-024 | none |
 | [TASK-026](tasks/TASK-026.md) | 项目内与跨项目授权并行队列 | DRAFT | P1 | High | TASK-025, TASK-027, TASK-028, TASK-029, TASK-030 | none |
 | [TASK-027](tasks/TASK-027.md) | 单负责人复审与人工等价交接 | PASSED | P1 | High | TASK-025, TASK-039, TASK-040 | none |
-| [TASK-028](tasks/TASK-028.md) | 主动停滞中断与负责人重规划 | DRAFT | P1 | High | TASK-027 | none |
+| [TASK-028](tasks/TASK-028.md) | 规划事务、审计链与认领租约 | IN_PROGRESS | P1 | High | TASK-027 | attempt-03 |
 | [TASK-029](tasks/TASK-029.md) | 有序写手回退与最终失败通知 | DRAFT | P1 | High | TASK-027, TASK-028 | none |
 | [TASK-030](tasks/TASK-030.md) | 任务能力画像与初始执行者选择 | DRAFT | P2 | High | TASK-016, TASK-025 | none |
-| [TASK-031](tasks/TASK-031.md) | 连接模型目录与实际运行身份同步 | IN_PROGRESS | P1 | High | TASK-025 | attempt-03 |
-| [TASK-032](tasks/TASK-032.md) | 连接推理强度默认值与能力校验 | IN_PROGRESS | P1 | High | TASK-031 | none |
-| [TASK-033](tasks/TASK-033.md) | 每日预估金额账本与双阈值 | IN_PROGRESS | P1 | High | TASK-031 | none |
-| [TASK-034](tasks/TASK-034.md) | 金额看管与达到上限独立停机 | IN_PROGRESS | P1 | High | TASK-033 | none |
-| [TASK-035](tasks/TASK-035.md) | 连接编辑中的每日费用配置与状态展示 | IN_PROGRESS | P1 | High | TASK-032, TASK-034 | none |
-| [TASK-036](tasks/TASK-036.md) | 执行通道有界读取探测与阶段证据 | DRAFT | P1 | Medium | none | none |
-| [TASK-037](tasks/TASK-037.md) | 执行进度与重复读取的确定性检测 | DRAFT | P1 | High | TASK-036 | none |
-| [TASK-038](tasks/TASK-038.md) | 停滞看管接入与有界停机证据 | DRAFT | P1 | High | TASK-037 | none |
+| [TASK-031](tasks/TASK-031.md) | 连接模型目录与实际运行身份同步 | IN_PROGRESS | P1 | High | TASK-025 | attempt-19 |
+| [TASK-032](tasks/TASK-032.md) | 连接推理强度默认值与能力校验 | IN_PROGRESS | P1 | High | TASK-031 | attempt-09 |
+| [TASK-033](tasks/TASK-033.md) | 每日预估金额账本与双阈值 | IN_PROGRESS | P1 | High | TASK-031 | attempt-17 |
+| [TASK-034](tasks/TASK-034.md) | 金额看管与达到上限独立停机 | IN_PROGRESS | P1 | High | TASK-033 | attempt-07 |
+| [TASK-035](tasks/TASK-035.md) | 连接编辑中的每日费用配置与状态展示 | IN_PROGRESS | P1 | High | TASK-032, TASK-034 | attempt-13 |
+| [TASK-036](tasks/TASK-036.md) | 执行通道有界读取探测与阶段证据 | IN_PROGRESS | P1 | High | none | attempt-10 |
+| [TASK-037](tasks/TASK-037.md) | 执行进度与重复读取的确定性检测 | IN_PROGRESS | P1 | High | TASK-036 | attempt-03 |
+| [TASK-038](tasks/TASK-038.md) | 停滞看管接入与有界停机证据 | IN_PROGRESS | P1 | High | TASK-037 | attempt-12 |
 | [TASK-039](tasks/TASK-039.md) | 负责人有界证据包与五动作协议底座 | PASSED | P1 | High | TASK-025 | none |
 | [TASK-040](tasks/TASK-040.md) | 增量执行胶囊编译与边界继承 | PASSED | P1 | High | TASK-039 | none |
 | [TASK-041](tasks/TASK-041.md) | 桌面显式启用负责人复审流程 | PASSED | P1 | High | TASK-027 | none |
 | [TASK-042](tasks/TASK-042.md) | 负责人决定与待处理胶囊的只读展示 | PASSED | P1 | High | TASK-027, TASK-041 | none |
+| [TASK-043](tasks/TASK-043.md) | 前置解除后的自动规划与激活 | DRAFT | P1 | High | TASK-045, TASK-046 | none |
+| [TASK-044](tasks/TASK-044.md) | 已通过任务的旧无人看守记录归档 | DRAFT | P2 | Medium | TASK-042 | none |
+| [TASK-045](tasks/TASK-045.md) | 修复胶囊自动续跑与执行器回退 | DRAFT | P1 | High | TASK-028 | none |
+| [TASK-046](tasks/TASK-046.md) | 拆分子任务模型与自动汇合 | DRAFT | P1 | High | TASK-045 | none |
 
 ## 当前阶段
 
-- 负责人闭环进度（2026-10-27）：TASK-041 动态负责人筛选/标准窗口验收已修复，TASK-042 只读决定、脱敏理由和待处理胶囊数量已通过独立候选验收。correct/split 仍保存未提交制品并求助，不自动提交或绕过起点检查；授权续跑和完整无人看守未发布。
+- 负责人闭环进度（2026-10-27）：TASK-041/042 已完成只读复审入口和决定展示。后续按安全优先级执行：TASK-028（P1 链中最先，规划事务/审计链/租约）→ TASK-045（P1，correct 自动续跑与新执行器回退）→ TASK-046（P1，split 子任务模型）→ TASK-043（P1，DRAFT 自动规划、一次性授权与通过后晋级）→ TASK-044（P2，旧运行归档与通知协调）。TASK-044 与 TASK-043 无技术依赖，只按产品优先级后置。
 
 - 直接实施检查点（2026-10-26）：主人授权负责人直接开发。TASK-031 的 F-03 已修正并补双进程测试，手动目录查询已接持久缓存，界面与实际任务使用保存模型 ID；任务冻结模型与连接。TASK-032 已加默认推理强度；TASK-033～035 已实现共享人民币账本、原子预留、软/上限与无用量停止、编辑界面。均先标 IN_PROGRESS，不能等同发布验收通过；之前全量旧自治回归问题已修正，历史基线通过，最新模块定向验收和剩余事项见 implementation/2026-10-26-first-usable.md。未启动真实收费任务，未发布安装包。
 
