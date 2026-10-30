@@ -1,0 +1,12 @@
+# TASK036 attempt02
+- outcome: completed
+- handoff: none
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: scripts/channel-probe-offline.ts; test/channel-probe-cli.test.ts
+- completed_scope: 独立脚本只接受--offline及五个固定Node替身，无参数/真实模式/额外命令均拒绝。五场景通过真CLI执行，输出mode=offline_fixture、realModelCalled=false、usage/model未知、amountHardLimit=null，不开放任意命令入口。
+- remaining_gaps: 真实通道手动适配/版本及实际模型身份采集、单独授权的一次真实验收，跨平台及完整发布；Task仍IN_PROGRESS。
+- anchors_touched: 独立CLI
+- verification: 新CLI两项2/2 PASS2.99秒，最新四工程types/diff PASS，无纠偏。01已过核心除测试补强后定向两项外未重复。
+- active_findings: none
+- scope_or_baseline_notes: 本轮实际新增四个代码/测试文件，分两个已校验合同。无真实认证/模型/网络、安装部署、提交push，不能称整任务通过。时间预算上限只控制执行时间，不是金额硬限额。

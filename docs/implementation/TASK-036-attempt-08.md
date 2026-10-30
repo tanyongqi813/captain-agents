@@ -1,0 +1,12 @@
+# TASK036 attempt08
+- outcome: partial
+- handoff: checkpoint
+- stop_reason: scope_conflict
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: docs/implementation/TASK-036-acceptance.md; docs/implementation/TASK-036-attempt-08.md
+- completed_scope: 最新07后必要选定兼容，旧无输出/仅开始/不退出/洪泛/启动失败5/5 PASS0.94秒，准备/执行挂起/Abort/SIGTERM4/4 PASS3.89秒，diff PASS。不重复07已过审批/正常组合/types。
+- remaining_gaps: 复审发现F06外层在core回收失败时仍finally删根目录，须另批修复，不在本验收白名单修改生产。
+- anchors_touched: none
+- verification: latest_code_covered: yes（选择边界范围）；真实/全仓NOT_RUN。
+- active_findings: F06 unresolved
+- scope_or_baseline_notes: 这是必要验收而非新代码。测试通过不等于所有失败分支正确；发现源码安全缺口后未宣称任务通过，09新合同修复。

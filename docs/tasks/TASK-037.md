@@ -1,11 +1,11 @@
 # TASK-037 — 执行进度与重复读取的确定性检测
 
 - handoff_contract: `1`
-- status: `DRAFT`
+- status: `IN_PROGRESS`
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-036[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `none`
+- current_attempt: `03`
 
 ## 业务结果
 
@@ -39,6 +39,7 @@
 ## 主要接口
 
 - src/core/activity.ts；src/core/budget.ts；test/stream-timing.test.ts
+- 独立观察核心 `src/core/execution-progress.ts`，LiveProgress仅Cursor接只读影子观察；不改变旧activity/停机。基于036离线结构化事件/有界观察证据开发，不表示036正式通过；不发READY或开放看管。显式注入累计休眠毫秒，状态只保存脱敏标识与有界窗口，阈值仅候选提示。
 
 ## 长期约束
 

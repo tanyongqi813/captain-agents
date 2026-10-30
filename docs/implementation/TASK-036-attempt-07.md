@@ -1,0 +1,12 @@
+# TASK036 attempt07
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe-consent.ts; src/core/channel-probe.ts; src/core/channel-probe-bounded-fixture.ts; test/channel-probe-spawn-consent.test.ts
+- completed_scope: 消费产生仅一次authorizeSpawn闭包；核心异步固定文件准备之后，在原审批锁内重读consumed记录/绑定/时间，同步实际spawn并装监听后再释放锁。等待门计入余量，超时迟到放行不能启动，门失败回收/拒绝；06外层透传，05已有expected透传保持。
+- remaining_gaps: 手动真实入口、真实凭据/预检/授权委托和单独授权真实验收未实现；不是身份鉴权。离线子级临时token不能代替未来真实调用的主人授权；Git目录初始化及全仓发布仍缺。
+- anchors_touched: runApprovedChannelProbe.authorizeSpawn; runProbe.start; runBoundedWorkerProbeFixture选项透传
+- verification: 新4项+受影响旧审批8项最新12/12 PASS0.56秒；外层正常组合定向1/1 PASS0.67秒；四工程types/diff PASS，无纠偏。latest_code_covered: yes。
+- active_findings: none
+- scope_or_baseline_notes: 四文件原子例外事前planning PASS；真实启动模板、凭据、runner/UI未改，无真实网络/登录/模型/收费/部署/提交。剩余风险是本次核心启动重排影响的旧输出/超时/取消分支，下一独立验收批仅选这些尚未覆盖最新代码的用例，不把历史通过冒充最新组合。

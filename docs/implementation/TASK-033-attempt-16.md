@@ -1,0 +1,12 @@
+# Implementation Report — TASK-033 / attempt-16
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: test/e2e/deepseek-active-group.ts
+- completed_scope: 新组创建关闭/零价，显式填两模型5/6及上限20、开启保存，关闭进程重启newAccount/20/5保持，旧B/default不变；16浅深900窄新图实际逐张查看，新组名称/创建按钮/说明/组选择及固定按钮完整。
+- remaining_gaps: 任务级验收矩阵及选定兼容，全仓发布。
+- anchors_touched: 新组真实窗口
+- verification: 最新build PASS（既有动态导入警告）、经明确范围工具审批Electron1/1 PASS（5.03秒）、四工程types/diff PASS；latest_code_covered: yes
+- active_findings: none
+- scope_or_baseline_notes: 无纠偏，生产未改；截图只覆盖新创建段，不冒称价格段同时可见。保留14历史图。临时目录/E2E无后台、真实认证或请求/模型/提交部署。

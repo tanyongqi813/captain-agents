@@ -1,0 +1,12 @@
+# Implementation Report — TASK-033 / attempt-13
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: src/core/dispatch.ts、test/deepseek-active-group.test.ts
+- completed_scope: F-04仅含DeepSeek采用保存活动组，其他通道不受影响；显式非DS组仍拒绝。
+- remaining_gaps: 新活动组窗口/截图、新组创建入口、整项及发布。
+- anchors_touched: moneyGroup
+- verification: 核心3/3（3.39秒）、四工程types/diff PASS；latest_code_covered: yes
+- active_findings: F-04 resolved
+- scope_or_baseline_notes: 无纠偏，Codex真CLI假选手done/无DS账，DS保存B组价2结算0.2、default视图0、切回旧账不变、关闭B拒绝；无真实调用/提交/部署。13从历史模板生成时dispatch_state已经CLOSED，事前planning校验PASS但不代表READY派发；本轮负责人按主人直接开发授权执行，未发机器派发信号，此元数据偏差保留，不篡改历史。以后新合同明确READY，复审后才CLOSED。

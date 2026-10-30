@@ -1,0 +1,12 @@
+# Implementation Report — TASK-033 / attempt-14
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: test/e2e/deepseek-active-group.ts
+- completed_scope: 真实窗口选择B取消不写、预算14/实际ID价7/cacheWrite0保存，default/C/Flash保留，关闭进程重启仍B/14/7；浅深900窄新三图已实际查看，组标题/选择/说明及预算行、固定按钮正常，选择框坐标在头尾内。
+- remaining_gaps: 新组创建入口、整项/发布。
+- anchors_touched: 离线Electron窗口测试
+- verification: build PASS（既有动态导入警告）；隔离launch失败后明确工具审批同命令1/1 PASS（4.21秒）；四工程types PASS，后续测试仅header定位器核对改字符串，diff PASS；latest_code_covered: yes（窗口）
+- active_findings: none
+- scope_or_baseline_notes: 无运行失败纠偏；仅初版运行前核对Modal类名修测试选择器。临时XAGENTS_HOME/userData，E2E关闭后台，无认证/请求/模型收费/提交部署。截图费用状态未知不冒充已读取账本；不证明生产后台生命周期。

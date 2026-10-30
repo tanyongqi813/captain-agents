@@ -1,0 +1,12 @@
+# TASK036 attempt03
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe.ts; src/core/channel-probe-consent.ts; test/channel-probe-consent.test.ts
+- completed_scope: 可信手动控制面的五分钟单次消费协议，命令及预期元数据摘要绑定，锁内执行前持久消费；失败/并发/独立冷进程不可复用。无审批、绑定不符、过期、时钟回退和坏文件拒绝。结构化init仅与可信预期精确一致才记录模型/版本，其他未知null，usage仍null。
+- remaining_gaps: 无真实通道适配器及人工入口消费者；owner/manual参数是可信调用方协议，不是身份鉴权或真实权限。真实运行、供应商/跨平台及全仓验收未过，整任务IN_PROGRESS。
+- anchors_touched: core report metadata; issueProbeApproval/runApprovedChannelProbe
+- verification: 新测试最终5/5 PASS约0.50秒，包含两个独立进程争用及第三冷进程拒绝；受影响固定文件核心定向1/1 PASS；四工程typecheck完成无诊断，diff PASS。补强测试无生产纠偏。命令组合末尾rg没有匹配返回1，不是类型失败。
+- active_findings: none
+- scope_or_baseline_notes: 合同READY/规划校验后实现，复审后CLOSED。优先级P1保持，难度升High（持久单次消费与跨进程并发）。无真实CLI/凭据/网络/收费/安装部署/提交push，未重跑旧脚本/UI/build/全量。原workers安全准备并不由新token替代；后续必须对接安全准备契约，不裸跑供应商命令，不继续孤立扩接口冒称可用。

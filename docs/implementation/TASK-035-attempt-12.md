@@ -1,0 +1,12 @@
+# Implementation Report — TASK-035 / attempt-12
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: test/e2e/deepseek-legacy-binding.ts、output/playwright/task-035-attempt-12-light.png、output/playwright/task-035-attempt-12-dark.png、output/playwright/task-035-attempt-12-narrow.png
+- completed_scope: 真实IPC/磁盘全局改Pro后未选中legacy组显示未知而非旧11，填5/0/6保存，Flash13/default实际ID表保留，重启legacy/新绑定/价5保持，旧账文件逐字不变。新浅深900窄图已实际逐张查看，Pro实际ID/未配置说明/空白三价/余量/时限及固定保存取消正常。
+- remaining_gaps: 功能矩阵/最后组件兼容及正式发布闸门。
+- anchors_touched: 离线Electron用例
+- verification: build PASS（既有动态导入警告）、工具范围审批窗口1/1 PASS（5.07秒）、最新四工程types/diff PASS；latest_code_covered: yes
+- active_findings: none
+- scope_or_baseline_notes: 无纠偏。临时用户目录/假账本、E2E禁后台，未认证/网络/模型/收费/安装部署/提交push；不借历史图冒充本次未知状态。

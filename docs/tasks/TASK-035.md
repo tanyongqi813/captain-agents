@@ -5,7 +5,7 @@
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-032[PASSED|PASSED_WITH_NOTES], TASK-034[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `none`
+- current_attempt: `13`
 
 ## 业务结果
 
@@ -34,6 +34,7 @@
 ## 依赖与排序
 
 - 前置：TASK-032,TASK-034。新增任务保持 DRAFT；执行前由负责人确认接口、拆出不超过 3 个主要实现文件的微批并生成 Capsule。
+- 上述前置保留为整项集成验收闸门。按 2026-10-28 策略纠正，使用 TASK-033 attempt-05 已验证的可选 cacheWrite 设置/计价接口，可独立实施离线编辑切片；不将本任务标 READY 或宣称前置整项通过。
 
 ## 主要接口
 

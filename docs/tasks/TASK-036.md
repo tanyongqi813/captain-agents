@@ -1,11 +1,11 @@
 # TASK-036 — 执行通道有界读取探测与阶段证据
 
 - handoff_contract: `1`
-- status: `DRAFT`
+- status: `IN_PROGRESS`
 - priority: `P1`
-- difficulty: `Medium`
+- difficulty: `High`
 - dependencies: `none`
-- current_attempt: `none`
+- current_attempt: `10`
 
 ## 业务结果
 
@@ -35,10 +35,12 @@
 
 - 前置：none。在 TASK-035 后、无人看守开放前执行；若先试用该执行通道，则前移到该通道试用前。
 - 执行前确认所有源码锚点和测试入口，生成独立 Capsule；不从本 Task Spec 直接派活。
+- 2026-10-29主人要求调整连续空转的定时任务后，下一开发目标为本任务既有离线替身范围。TASK-035功能验收已齐，未完成的全仓发布闸门不阻断这个独立诊断工具的离线实现；不据此标035正式PASSED或解除发布闸门。本任务真实探测仍必须另行明确授权并手动触发，自动化不得运行。
 
 ## 主要接口
 
 - `src/core/workers.ts` — 启动参数；`test/fixtures/streams/cursor-stream.jsonl` — 事件素材；`src/core/platform.ts` — killTree 与进程树控制。
+- `src/core/channel-probe.ts` — 通用最小环境与可信准备上下文的有界执行；`src/core/channel-probe-worker-fixture.ts` — 显式仅离线的运行包组合验证，不是已启用真实适配器。
 
 ## 长期约束
 
@@ -47,5 +49,5 @@
 
 ## 微批边界
 
-- expected_primary_files: `3`
-- exception_reason: `none`
+- expected_primary_files: `4`
+- exception_reason: `生命周期/授权原子链须同时接核心启动、单次消费和外层消费者及测试；不能留下独立组漏杀或异步准备后绕过审批的半接线。`

@@ -1,0 +1,12 @@
+# Implementation Report — TASK-033 / attempt-15
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: app/renderer/components/DeepseekSettings.tsx、test/ui/deepseek-active-group.test.tsx、docs/ui-spec.md
+- completed_scope: 新组名+统一按钮显式创建草稿；默认关闭/独立零价，不复制旧账价，保存才生效，取消不写；重复/非法/超32拒绝不覆盖。
+- remaining_gaps: 新建入口最新真实窗口与整项验收。
+- anchors_touched: createGroup
+- verification: UI4/4、四工程types/diff PASS；latest_code_covered: yes
+- active_findings: none
+- scope_or_baseline_notes: 无纠偏，核心校验复用，不真实联网/凭据/收费/提交部署；14截图仅覆盖15之前界面，不作最新视觉证据。

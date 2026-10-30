@@ -1,11 +1,11 @@
 # TASK-038 — 停滞看管接入与有界停机证据
 
 - handoff_contract: `1`
-- status: `DRAFT`
+- status: `IN_PROGRESS`
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-037[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `none`
+- current_attempt: `12`
 
 ## 业务结果
 
@@ -39,6 +39,8 @@ runner 看管接入纯检测结果；首次进入异常产生一次预警与快�
 ## 主要接口
 
 - src/core/runner.ts；src/core/live.ts；src/core/job.ts
+- 独立纯判定 `src/core/execution-guard.ts`消费037已验证只读快照；默认null策略不产生动作，明确阈值与校准引用只供可信控制面注入，尚无生产消费者。停止计划不代表真实强停授权，重复读仅预警。正式037依赖不解除，不输出机器READY。
+- `src/core/execution-guard-loop.ts::watchOfflineExecution`为显式离线连续入口：独立有界Cursor观察、固定会话salt/任务轮次与身份、只消费已有休眠登记、自身盲区保守失效，依次消费证据/停止/终态回交。不从应用或runner自动启用；无options零IO、Abort及协作截止可返回检查点，无真实调用权限、不能把截止说成硬IO抢占。
 
 ## 长期约束
 

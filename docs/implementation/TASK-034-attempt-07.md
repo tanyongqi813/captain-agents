@@ -1,0 +1,12 @@
+# Implementation Report — TASK-034 / attempt-07
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: src/core/view.ts、src/core/view-types.ts、app/main/notifications.ts、test/money-budget-notices.test.ts、docs/ui-spec.md
+- completed_scope: F-02有效当前round首停证据→只读安全moneyStopAt→固定本机通知，复用原通知关闭/初始化不补发/持久去重/重启规则；普通出错/手动停和旧轮/坏证据不猜，不暴露原始reason。
+- remaining_gaps: 原生系统通知真实展示、Windows/整机休眠及完整verify/整合发布；不是整任务PASSED。
+- anchors_touched: rows/ViewJob/notices/tracker
+- verification: 初次三文件9/9（0.64秒）；补真实CLI B组上限→runner首停JSON→view→通知替身集成，新定向1/1（3.40秒），未重跑不变9项；最新四工程types/diff PASS；latest_code_covered: yes
+- active_findings: F-02 resolved
+- scope_or_baseline_notes: 无纠偏/真实系统通知/网络认证收费/安装部署/提交push；本次新增费用停止例外由034原Spec授权，原普通错误不通知策略保持。05/06暂停/费用通过证据不重复。

@@ -5,7 +5,7 @@
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-025[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `03`
+- current_attempt: `19`
 
 ## 业务结果
 
@@ -46,5 +46,5 @@
 
 ## 微批边界
 
-- expected_primary_files: `3`
-- exception_reason: `none`
+- expected_primary_files: `4`
+- exception_reason: `授权IPC接口需shared白名单、preload、main注册与可独立验证桥接模块四文件同批生效，避免通用入口或未受保护通道；界面另批。`

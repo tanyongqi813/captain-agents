@@ -1,0 +1,12 @@
+# TASK038 attempt12 — 观察归属及最终离线生命周期
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/execution-guard-loop.ts; test/execution-guard-loop.test.ts
+- completed_scope: 移除新loop的SleepMonitor写入，只读原runner休眠登记；本观察超过60秒盲区（含读取前后）invalidate，不把缺证据阶段累计为连续宽限。真实日志观察到未结束read+持续error→原runner停机→报告patch保留→needs_owner；B继续、A新建且父子身份已核对的两个PID在ps均不在，无新任务/重派。正常read完成后长命令仍正常done、不回交。无options零IO、取消及协作截止均有断言。
+- remaining_gaps: 生产启用控制合同与真实阈值校准、正式037/036依赖、完整verify/安全整合发布；不是整项通过。
+- anchors_touched: watchOfflineExecution盲区/新测试
+- verification: 初三个选择用例3/3及组合1/1通过后，一次源码复审纠偏扩盲区检查至异步读取前后；最终新3/3 PASS3.57秒、范围明确审批的受影响组合1/1 PASS3.27秒、四工程types/diff PASS。不是单次全套4/4，latest_code_covered: yes。
+- active_findings: F-11 resolved
+- scope_or_baseline_notes: 仅offline_fixture/保存假命令/Cursor已知协议，函数无默认真实入口或启动定时器；calibration不是权限。最多90秒是协作循环截止，不可抢占阻塞IO，不声称硬终止进程。盲区用可控时钟不是OS休眠，Windows进程组合明确跳过。11失败历史/Review保持，runner/live旧dirty未修改，无真实认证网络模型/提交部署。

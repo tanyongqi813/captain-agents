@@ -1,0 +1,12 @@
+# TASK036 attempt06
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe.ts; src/core/channel-probe-worker-fixture.ts; src/core/channel-probe-bounded-fixture.ts; test/channel-probe-bounded-fixture.test.ts
+- completed_scope: 外层单次消费后只起一个固定离线helper，配置/额度快照和运行包准备均在子级，总时限含helper启动和准备。POSIX内层继承外层组，Windows复用树控制；正常退出/超时/Abort/SIGTERM先回收再删整个拥有根目录。helper转入独立临时登记处，只委托离线单次子调用，不读取登录。报告scope明确helper_preparation_and_execution，不伪造内层模型工具时间。
+- remaining_gaps: 实际spawn时授权原子检查、真正手动真实入口/凭据/单独授权验收、临时Git及发布未过。SIGKILL父级/整机崩溃不保证清理。Windows未实测，SIGTERM用例明确跳过Windows。
+- anchors_touched: runProbe取消/继承组; runWorkerProbeFixture拥有根; runBoundedWorkerProbeFixture/helper
+- verification: 初版新6/6 PASS；复审唯一纠偏增加外层PID/出生时间/nonce拥有标记及registry排他创建、Windows SIGTERM跳过声明后最新7/7 PASS5.42秒，四工程types/diff PASS。受影响旧固定文件1/1、旧子孙1/1、准备组合及stdin2/2 PASS；原胶囊“独立子孙”名称未匹配，另按真实名称“回收自己启动”补跑，没有冒称首次已覆盖。latest_code_covered: yes。
+- active_findings: none
+- scope_or_baseline_notes: 四文件原子例外事先Spec/Capsule声明并planning PASS。05备注F03只收口总流程限时部分，仍不称真实spawn原子授权已满足。无真实网络/登录/模型收费/部署/提交，不重跑旧审批/全量/UI/build。技能形成独立复审；拥有协议不是不可信代码鉴权。

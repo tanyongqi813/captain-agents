@@ -1,0 +1,12 @@
+# Implementation Report — TASK-034 / attempt-06
+- outcome: `partial`
+- handoff: `checkpoint`
+- stop_reason: `scope_conflict`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: test/money-budget-late-stop.test.ts、docs/implementation/TASK-034-acceptance.md
+- completed_scope: 终态迟到B组费用1.2/上限1、补差0.7和超额0.2、重放幂等/停派/默认账不变；组合看管17/17。
+- remaining_gaps: F-02金额停止专用通知无接线；系统级发布验收。
+- anchors_touched: 新测试/验收矩阵
+- verification: 五文件17/17（16.44秒）、四工程types/diff PASS；latest_code_covered: yes
+- active_findings: F-02 unresolved
+- scope_or_baseline_notes: 无纠偏/生产修改，05生产变化后的必要兼容，不重复暂停长测/窗口/全量。无真实调用/提交部署。

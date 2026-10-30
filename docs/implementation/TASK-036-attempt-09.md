@@ -1,0 +1,12 @@
+# TASK036 attempt09
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe-bounded-fixture.ts; test/channel-probe-cleanup-failure.test.ts
+- completed_scope: F-06回收失败不删拥有根，保留固定本地恢复ID/根目录及helper身份，不保存原始日志/凭据，不自动再调用。正常清理不变。
+- remaining_gaps: 真实手动入口/授权和凭据委托、真实预检/实际样本、临时Git及发布仍缺，整体IN_PROGRESS；故障注入仅POSIX，不冒称Windows故障实测。
+- anchors_touched: runBoundedWorkerProbeFixture清理与恢复记录；helper本地身份
+- verification: 故障测试首轮失败是context先删marker导致after钩子ENOENT，唯一纠偏保存拥有身份到内存并在测试结束前显式回收，最新1/1 PASS1.87秒；正常组合定向1/1 PASS0.97秒；最新四工程types/diff PASS。latest_code_covered: yes。
+- active_findings: F-06 resolved
+- scope_or_baseline_notes: 09合同首次结构FAIL（F06格式），仅修为F-06并分别确认planning及08Review PASS后才改代码，未重演先执行偏差。故障首轮遗留假进程清理时沙箱ps EPERM，经范围明确工具审批，仅按精确测试路径xagents-test-foG6Gx/hang.mjs核验并回收本轮测试组827，不碰其他进程；没有真实模型/凭据/网络/部署/提交。故障现场测试只处理临时目录，不删除用户资料。初次测试钩子失败与必要恢复不隐瞒，未把模拟权限故障当真实系统故障。

@@ -1,0 +1,12 @@
+# Implementation Report — TASK-033 / attempt-12
+- outcome: `partial`
+- handoff: `checkpoint`
+- stop_reason: `scope_conflict`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: src/core/deepseek-settings.ts、src/core/dispatch.ts、src/core/view.ts、app/renderer/components/DeepseekSettings.tsx、test/deepseek-budget-groups.test.ts、test/deepseek-active-group.test.ts、test/ui/deepseek-active-group.test.tsx、docs/ui-spec.md
+- completed_scope: 已配置活动组保存/编辑/派发/显示同组接线，四主要文件原子例外；新核心2/2、旧组解析5/5、UI新2/2及费用/价表13/13通过。
+- remaining_gaps: 复审发现非DeepSeek会误继承活动组而被拒，F-04；窗口/新组创建/整项尚缺。
+- anchors_touched: Endpoint、moneyGroup、buildView、费用编辑setter
+- verification: 初次core6/7、UI14/15；一次纠偏修测试Usage字段及原生Select事件后新core2/2、UI2/2，未重跑原已过5和13；最新四工程types/diff PASS；latest_code_covered: yes（选定范围）
+- active_findings: F-04 unresolved
+- scope_or_baseline_notes: 生产本轮无纠偏；测试纠偏预算已用，不在本合同再改。无真实网络/密钥/收费、提交部署，未build/e2e/截图/全量。

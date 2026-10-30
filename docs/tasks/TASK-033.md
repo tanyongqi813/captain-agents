@@ -5,7 +5,7 @@
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-031[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `none`
+- current_attempt: `17`
 
 ## 业务结果
 
@@ -46,5 +46,5 @@
 
 ## 微批边界
 
-- expected_primary_files: `3`
-- exception_reason: `none`
+- expected_primary_files: `4`
+- exception_reason: `活动预算组设置/派发/只读视图/编辑器必须原子接线，避免接受选择却仍按default派发或展示。`

@@ -1,0 +1,12 @@
+# Implementation Report — TASK-035 / attempt-13
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: docs/implementation/TASK-035-acceptance.md
+- completed_scope: 三业务AC矩阵和全局setField变化后一次费用/组/能力/目录/授权兼容。
+- remaining_gaps: 正式前置/全仓verify/安全整合发布。
+- anchors_touched: none
+- verification: 六UI文件28/28（2.34秒）、diff PASS；types/build/窗口沿12最新；latest_code_covered: yes（选定范围）
+- active_findings: none
+- scope_or_baseline_notes: 本批无代码修改/纠偏，不重复已过核心/看管/窗口。11本轮真实安全修复及12新窗口已通过，不冒称全仓或整任务PASSED；无真实调用/提交部署。

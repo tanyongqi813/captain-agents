@@ -1,0 +1,12 @@
+# Implementation Report — TASK-034 / attempt-05
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: src/core/money-budget.ts、src/core/runner.ts、test/money-budget-suspension.test.ts
+- completed_scope: 新累计量不能洗掉长观测间隔，observationStopped每尝试持久锁且严格验证；迟到量照实补账，runner每round首个停机JSON记时间/原因/组/预算与费用快照，证据失败仍停止。
+- remaining_gaps: 迟到超额明确验收及最终组合矩阵；真实整机休眠/Windows暂停不在本测试证明范围。
+- anchors_touched: observeMoney/watch
+- verification: 新测试2/2 PASS（35.75秒），四工程types/diff PASS；latest_code_covered: yes
+- active_findings: none
+- scope_or_baseline_notes: 无纠偏，POSIX仅暂停自己本轮CLI创建且身份核对过的supervisor；假worker期间新增0.2累计量，32秒恢复后及时stopped，首停证据0.2/上限5，终态1元fallback/报告补丁保留。Windows信号测试明确跳过；不是整机OS休眠实测。无真实网络认证收费/安装部署/提交push。

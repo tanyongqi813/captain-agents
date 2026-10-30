@@ -1,0 +1,12 @@
+# Implementation Report — TASK-035 / attempt-11
+- outcome: `completed`
+- handoff: `none`
+- stop_reason: `none`
+- workspace_branch: captain-agents @ codex/custom-requirements
+- changed_files: src/core/deepseek-settings.ts、app/renderer/components/DeepseekSettings.tsx、test/deepseek-legacy-price-binding.test.ts、test/ui/deepseek-money.test.tsx、test/ui/deepseek-model-prices.test.tsx、docs/ui-spec.md
+- completed_scope: 核对035发现global模型变化只清当前legacy组，未选中组可借旧价；新增legacyModels严格槽位实际ID绑定。UI换模型给所有旧组绑定修改前ID，不删除原价，错ID显示未知；主人编辑该槽位价才绑定当前ID。保存/派发统一helper核验，实际ID表优先/旧无绑定兼容。
+- remaining_gaps: 新未知/绑定状态窗口与完整矩阵。
+- anchors_touched: deepseekMoney/deepseekModelPrice/setField/priceFor/submit
+- verification: 核心两文件6/6（4.73秒）、三UI文件18/18（2.86秒）、四工程types/diff PASS；latest_code_covered: yes
+- active_findings: none
+- scope_or_baseline_notes: 无纠偏，旧0断言升级为未知空白，不放宽断言；其他组旧价保留绑定而非重贴新ID；真实CLI未知价零注册。未真实网络/认证/收费/提交部署，未重复旧看管/build/窗口。

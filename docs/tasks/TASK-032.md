@@ -5,7 +5,7 @@
 - priority: `P1`
 - difficulty: `High`
 - dependencies: `TASK-031[PASSED|PASSED_WITH_NOTES]`
-- current_attempt: `none`
+- current_attempt: `09`
 
 ## 业务结果
 
@@ -38,6 +38,12 @@ DeepSeek 编辑新增按模型的推理强度模式：默认表示完全省略�
 ## 主要接口
 
 - src/core/deepseek-settings.ts；src/core/workers.ts；src/core/roster.ts
+
+### 显式能力兼容合同
+
+reasoningCapabilities为可选保存声明，绑定规范化baseUrl及wireApi，models按实际ID登记high布尔值、source=user及ISO更新时间；最多128项。当前无可信元数据导入器，不接受自称metadata的声明，不从目录ID推断能力。旧省略/high字段保持可读且不自动改成默认，但派发显式档位须匹配声明；未知/不支持/换地址协议模型均启动前拒绝，提示选默认或确认能力。default不需要声明，命令省略行为保持。首批设置解析与派发门槛同批生效；续跑/真实启动复核和编辑声明另批，整项未完成不放行。
+
+错误回交只识别run.log末尾64KiB完整JSON行的error/turn.failed事件：model_not_found或unsupported_parameter且param为reasoning_effort/model_reasoning_effort，不猜散文或工具错误。按job.id与resume.round（缺省1）持久去重，消费先留历史再请求，崩溃不重试。同次原授权grant/binding、冻结地址/协议/凭据版本须仍匹配；runner只登记，桌面消费复用031受控调度/取消，不给CLI开网络。未授权不补队列，授权重开不复活旧请求，失败/冷却不重试，保留原报告/费用并提示主人。
 
 ## 长期约束
 

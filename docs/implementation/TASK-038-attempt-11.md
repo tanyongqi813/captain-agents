@@ -1,0 +1,12 @@
+# TASK038 attempt11 — 连续离线看管接线
+- outcome: partial
+- handoff: checkpoint
+- stop_reason: scope_conflict
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/execution-guard-loop.ts; test/execution-guard-loop.test.ts
+- completed_scope: 独立有界观察器→consumer→原runner停止→停后真实needs_owner，无生产timer；A实际日志未完read+持续error触发，报告patch保留、B仍运行、A自有父子PID均ps不在、无重派。
+- verification: 首1/2及types FAIL（报告夹具被清/联合类型）；唯一纠偏类型收窄及result夹具/断言后默认取消总闸门1/1通过，组合到最后ps受隔离EPERM；明确范围审批同代码定向组合1/1 PASS3.24秒。最终四工程types/diff PASS。不是全套同一次2/2通过。
+- remaining_gaps: 复审F11休眠源归属修复，正常完成不误停最终兼容；正式依赖/校准/发布。
+- active_findings: F-11 unresolved
+- anchors_touched: 新连续入口与新组合
+- scope_or_baseline_notes: 90秒为协作循环截止检查，不是可以抢占内核IO的硬进程总闸门。没有真实认证联网模型/提交部署；未改runner/live历史增量。

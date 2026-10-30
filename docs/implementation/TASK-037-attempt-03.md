@@ -1,0 +1,12 @@
+# TASK037 attempt03 — 选定兼容及矩阵
+- outcome: completed
+- handoff: none
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: docs/implementation/TASK-037-acceptance.md
+- completed_scope: 三业务AC映射01/02证据，选定LiveProgress兼容。
+- remaining_gaps: 正式036依赖、全仓verify/发布/实际跨平台；不把功能矩阵当发布通过。
+- anchors_touched: none
+- verification: planning PASS后执行；指定LiveProgress匹配实际1/1 PASS0.53秒，不是预期两项；节流测试名称不同未运行，仅源码保持检查。diff PASS。latest_code_covered: yes（所选命令）。
+- active_findings: none
+- scope_or_baseline_notes: 无生产改动/纠偏/旧矩阵重复测试；types沿02最终生产。总时限保持来源为源码未改，不冒称新强停验收。

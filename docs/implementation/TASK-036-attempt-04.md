@@ -1,0 +1,12 @@
+# TASK036 attempt04
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe-consent.ts; test/channel-probe-expiry.test.ts
+- completed_scope: 修复接线审查发现的时间窗口：03把调用前now贯穿锁等待和消费落盘，剩余有效期不足时可能过期启动。现以调用时间+单调流逝/墙钟增量核验，读取审批后与落盘释放锁后、执行前均核验；墙钟回退拒绝。落盘后过期保持consumed不重开。发放溢出拒绝不写文件。
+- remaining_gaps: 真正手动通道适配及真实授权验收、跨平台/发布仍缺，Task保持IN_PROGRESS。通用核心不是选手沙箱，不能把run-package命令直接放到另一个临时cwd/HOME运行。
+- anchors_touched: issueProbeApproval/runApprovedChannelProbe
+- verification: 最新新增3项+受影响03五项共8/8 PASS约0.56秒，四工程types PASS、diff PASS。首轮7/8，唯一纠偏修夹具Date.now计数遗漏withLock截止读取，未改生产；最终覆盖锁等待过期、落盘后过期/回退、溢出，以及冷进程单次兼容。latest_code_covered: yes。
+- active_findings: none
+- scope_or_baseline_notes: 先READY规划PASS再改代码，按安全优先原则先修真实发现，不重跑无关五场景/UI/build。workers.command的环境/unset/pass/stdin/login与运行包、runner的checkChoice/预算/凭据提取是不可省的安全契约；当前probe核心只接受file/args、新建独立HOME/cwd及ignore stdin，两者不等价。未修改这些历史脏路径或018/028，不读真实凭据、不联网/收费、不提交push或安装部署。使用architect-pm-handoff形成有界合同及独立复审，不把切片提升成整任务通过。

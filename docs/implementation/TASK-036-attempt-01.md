@@ -1,0 +1,12 @@
+# TASK036 attempt01
+- outcome: completed
+- handoff: none
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe.ts; test/channel-probe.test.ts
+- completed_scope: 显式调用核心，无默认真实通道；临时固定文件/独立HOME/不继承凭据；90秒最大预算，64KiB总输出/8KiB单行，只保留阶段时间和结果校验，不留原始日志。spawn失败/超时/洪泛分类；正常退出及超时均清理自身进程树。
+- remaining_gaps: 独立离线脚本入口、真实适配器/另行授权手动真实验收、Windows实测与完整verify。
+- anchors_touched: runChannelProbe
+- verification: 初次6/6 PASS；复审补强实际父环境隔离及子孙回收证据，受影响2/2 PASS，最新types/diff PASS。没有生产纠偏，不重复初次未变5个场景。
+- active_findings: none
+- scope_or_baseline_notes: 只真实启动Node假进程，无真实模型/认证/网络/部署/提交；model/version/usage保持null。该模块不是安全沙箱，调用方命令须可信；目前没有应用/后台消费者。

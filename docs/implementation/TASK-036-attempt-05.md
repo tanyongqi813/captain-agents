@@ -1,0 +1,12 @@
+# TASK036 attempt05
+- outcome: completed
+- handoff: checkpoint
+- stop_reason: none
+- workspace_branch: /Users/yyw./Documents/ChatGPT/派活工作台/captain-agents @ codex/custom-requirements
+- changed_files: src/core/channel-probe.ts; src/core/channel-probe-worker-fixture.ts; test/channel-probe-worker-fixture.test.ts
+- completed_scope: 显式仅离线的原运行包→固定文件/只读提示→审批消费→有界执行→清理组合。实际调用prepareRun/command，不改模板；roster选择、保存策略、checkListed和本地额度缓存checkQuota拒绝不跳过。缺替身/临时登记处/token/离线模式拒绝，额度坏缓存不补查网络。Cursor替身保留原sandbox参数、--mode ask、--workspace、独立状态和memory开关，丢弃父环境凭据；原通用核心仍最小环境。可信prepared执行支持固定stdin并冻结参数/环境，校验固定文件，不删除调用方目录。
+- remaining_gaps: 真正手动真实通道入口/安全预检及凭据生命周期尚未实现。当前不调用cursorToken、不启动实际srt，也未运行实际供应商。临时诊断资料是固定文件目录而非已初始化Git仓库；运行包准备不计入已验证的90秒选手执行时限，真实启用前需总流程限时/取消、启动边界授权再次核验。actual模型/版本无可靠结构事件仍null，实际usage未知，金额未设硬限额。Task仍IN_PROGRESS。
+- anchors_touched: runPreparedChannelProbe/runProbe; workerProbeFixtureIntent/runWorkerProbeFixture
+- verification: 最新原4项组合4/4 PASS2.19秒，追加策略到线/固定stdin两项定向2/2 PASS0.93秒；受影响旧固定文件1/1 PASS0.15秒；最新四工程types/diff PASS。未把追加后文件冒称整套6/6重跑。latest_code_covered: yes。
+- active_findings: none
+- scope_or_baseline_notes: 先READY/规划PASS再实现。首版types FAIL（Job.network只接受true，不能传false）、组合3/4 FAIL（macOS临时路径/实际cwd别名不一致）；唯一纠偏去掉network属性保持默认关闭，临时路径realpath后通过。随后仅追加两项既定验收测试，生产代码未再修改。新prepared入口是可信内部协议，不是权限沙箱；offline_fixture/realModelCalled=false基于可信测试替身约定，不是识别任意程序的鉴权保证。架构技能约束了三文件和独立Review，不开启真实消费者。无真实凭据/网络/模型/收费/安装部署/提交push，未重跑旧审批、五假场景、UI/build/全量。
