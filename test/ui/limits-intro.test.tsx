@@ -56,12 +56,12 @@ test('DeepSeek 分组的编辑弹窗可配置中转地址、协议、模型 ID �
   fireEvent.change(screen.getByRole('combobox', { name: 'API 协议' }), { target: { value: 'chat' } });
   fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'relay-secret-123' } });
   fireEvent.click(screen.getByRole('button', { name: '获取可用模型' }));
-  await waitFor(() => expect(deepseekModels).toHaveBeenCalledWith({ ...defaultDeepseekEndpoint, baseUrl: 'https://relay.example/v1/', wireApi: 'chat' }, 'relay-secret-123'));
+  await waitFor(() => expect(deepseekModels).toHaveBeenCalledWith({ ...defaultDeepseekEndpoint, baseUrl: 'https://relay.example/v1/', wireApi: 'chat', proReasoning: 'default', flashReasoning: 'default' }, 'relay-secret-123'));
   expect(screen.getByText('已获取 2 个模型')).toBeTruthy();
   fireEvent.change(screen.getByRole('combobox', { name: 'Pro 模型 ID' }), { target: { value: 'relay-pro' } });
   fireEvent.change(screen.getByRole('combobox', { name: 'Flash 模型 ID' }), { target: { value: 'relay-fast' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(setSettings).toHaveBeenLastCalledWith({ deepseek: { baseUrl: 'https://relay.example/v1/', wireApi: 'chat', proModel: 'relay-pro', flashModel: 'relay-fast', offPeakOnly: false } }));
+  await waitFor(() => expect(setSettings).toHaveBeenLastCalledWith({ deepseek: { baseUrl: 'https://relay.example/v1/', wireApi: 'chat', proModel: 'relay-pro', flashModel: 'relay-fast', offPeakOnly: false, proReasoning: 'default', flashReasoning: 'default' } }));
   expect(deepseekLogin).toHaveBeenCalledWith('relay-secret-123');
   expect(screen.queryByRole('dialog', { name: '编辑 DeepSeek' })).toBeNull();
 });

@@ -197,6 +197,21 @@ test('看板展示整台自治求助，不把共享节点当成等待单独采�
   expect(within(screen.getByRole('tablist', { name: '页面' })).getByRole('tab', { name: /规划/ }).getAttribute('aria-selected')).toBe('true');
 });
 
+test.each(['头部', '底部'])('从看板打开的自治详情用%s关闭后不会在重进规划页时复活', async place => {
+  const view = fixtureView(); view.autopilots = [run({ state: 'needs_owner', active: false, reason: '请主人处理。' })];
+  view.projects = [{ name: 'demo', label: '示例', repo: '/repo', archived: false, config: null }];
+  view.plans = { demo: { present: true, project: 'demo', diagnostics: [], ready: [], tasks: [] } };
+  window.xa = fixtureBridge({ getView: vi.fn(async () => view) }); render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: /TASK-001 等主人 无人看守详情/ }));
+  const dialog = await screen.findByRole('dialog');
+  const closes = within(dialog).getAllByRole('button', { name: '关闭' });
+  fireEvent.click(place === '头部' ? closes[0] : closes.at(-1)!);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: '看板' }));
+  fireEvent.click(screen.getByRole('tab', { name: '规划' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
 test('台账或项目后来被移除仍能查看旧自治求助证据', () => {
   const view = fixtureView(); view.projects = []; view.plans = {};
   view.autopilots = [run({ state: 'needs_owner', active: false, reason: '请主人检查执行证据。' })];

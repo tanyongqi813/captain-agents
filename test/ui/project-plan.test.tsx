@@ -61,6 +61,15 @@ test('左栏只列真的有任务台账的项目：登记了但没有 docs/TASK_
   expect(screen.getByText(/规划文档由负责人维护/)).toBeTruthy();
 });
 
+test('任务行显示规划文档里的优先级标签', async () => {
+  await openPlan(planView({ alpha: planFor([
+    task({ id: 'TASK-001', priority: 'P0' }),
+    task({ id: 'TASK-002', priority: 'P2' }),
+  ]) }));
+  expect(screen.getByText('优先级 P0')).toBeTruthy();
+  expect(screen.getByText('优先级 P2')).toBeTruthy();
+});
+
 test('诊断照原样列在任务列表上方：error 是 alert、warn 是 status', async () => {
   await openPlan(planView({ alpha: planFor([task()], { diagnostics: [
     { level: 'error', message: 'TASK-002：Task Spec 缺少或无法解析“状态”字段，无法进入可执行队列。' },
@@ -102,6 +111,20 @@ test('不可派发的任务没有派发按钮；问题清单在展开后照实�
   expect(screen.getAllByText('缺少 Task Spec（tasks/TASK-002.md），无法确认状态与依赖。', { exact: false }).length).toBeGreaterThan(0);
   // 没有 spec 可打开：连“打开 Task Spec”按钮都不出现。
   expect(screen.queryByRole('button', { name: '打开 Task Spec' })).toBeNull();
+});
+
+test('DRAFT 和 CHANGES_REQUESTED 显示负责人的下一步，不伪装成可派发', async () => {
+  await openPlan(planView({ alpha: planFor([
+    task({ id: 'TASK-028', title: '待推进', status: 'DRAFT', ready: false, problems: [] }),
+    task({ id: 'TASK-018', title: '待返工', status: 'CHANGES_REQUESTED', ready: false, problems: [] }),
+  ]) }));
+  expect(screen.getByText('等待负责人推进为 READY 并生成执行胶囊')).toBeTruthy();
+  expect(screen.getByText('等待负责人生成下一轮修复胶囊')).toBeTruthy();
+  await expand('TASK-028');
+  await expand('TASK-018');
+  expect(screen.queryByRole('button', { name: '派发' })).toBeNull();
+  expect(screen.getByText('等待负责人推进为 READY 并生成执行胶囊。')).toBeTruthy();
+  expect(screen.getByText('等待负责人生成下一轮修复胶囊。')).toBeTruthy();
 });
 
 test('派发弹窗：选手、每位选手的强度、读写权限都从“没选”开始，选全之前派发不可点', async () => {

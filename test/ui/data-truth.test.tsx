@@ -51,7 +51,7 @@ test('顶栏额度：悬停写各池和数据时间，Cursor 环只取总额度�
   expect(tip[0]).toBe('Codex（pro）\n周额度：63%\n数据时间 01-02 03:04');
   expect(tip[1].split('\n').slice(0, 4)).toEqual(['Cursor（Ultra）', '总额度：10%', '自家模型池：12%', '其他模型池：23%']);
   expect(tip[1]).toMatch(/\n数据时间 \d\d-\d\d \d\d:\d\d$/);
-  expect(tip[2]).toBe('Grok\n本期额度：5%\n这次没查到，上面是上一次的数据\n数据时间 01-02 03:04');
+  expect(tip[2]).toBe('Grok\n本期额度：5%\n本次刷新失败，显示 01-02 03:04 的数据\n数据时间 01-02 03:04');
   expect(tip[3]).toBe('Kimi Code\n已接入，暂无可查询额度');
   expect(tip[4]).toBe('隔离正常\n自检通过');
   const ring = (name: string) => within(status).getByRole('img', { name: new RegExp('^' + name) });
@@ -67,28 +67,40 @@ test('各家表现的额度卡：写数据时间；超过 30 分钟用提醒色�
   expect(codex?.textContent).toBe('数据时间 01-02 03:04');
   expect(card('Cursor').querySelector('.chip-warn')).toBeNull();
   expect(card('Cursor').textContent).toMatch(/数据时间 \d\d-\d\d \d\d:\d\d/);
-  expect(within(card('Grok')).getByText('这次没查到')).toBeTruthy();
+  expect(within(card('Grok')).getByText('本次刷新失败，显示 01-02 03:04 的数据')).toBeTruthy();
+  expect(within(card('Grok')).getByText('查看失败原因')).toBeTruthy();
   expect(card('Grok').textContent).toContain('5%'); // 保留上一次的数据，没有清空
 });
-test('刷新：点一下调用一次；进行中不可再点；完成后“刚刷新过”且不可点', async () => {
+test('刷新失败无历史数据时不声称显示旧数据，并提供可展开的原因', async () => {
+  const v = quotaView();
+  v.quota = [{ name: 'Cursor', icon: 'cursor', plan: null, at: null, failed: true,
+    failureReason: '未读到完整查询结果，请稍后重试。', bars: [bar('总额度', null)] }];
+  show(v); await toStats();
+  expect(screen.getByText('本次刷新失败，暂无可用数据')).toBeTruthy();
+  const summary = screen.getByText('查看失败原因');
+  fireEvent.click(summary);
+  expect(summary.closest('details')?.textContent).toContain('未读到完整查询结果，请稍后重试。');
+  expect(screen.queryByText(/本次刷新失败，显示/)).toBeNull();
+});
+test('刷新：点一下调用一次；进行中不可再点；完成后“刚尝试刷新”且不可点', async () => {
   let done: (() => void) | undefined;
   const refreshQuota = vi.fn(() => new Promise<void>(resolve => { done = resolve; }));
   show(quotaView(OLD), { refreshQuota }); await toStats();
   const button = screen.getByRole('button', { name: '刷新' }) as HTMLButtonElement;
-  expect(button.disabled).toBe(false); expect(screen.queryByText('刚刷新过')).toBeNull();
+  expect(button.disabled).toBe(false); expect(screen.queryByText('刚尝试刷新')).toBeNull();
   // 按钮始终在标题行右边那一组里，刷新前后不挪位置。
   expect(button.parentElement!.className).toBe('sec-tools');
   fireEvent.click(button); fireEvent.click(button);
   expect(refreshQuota).toHaveBeenCalledTimes(1);
   expect((screen.getByRole('button', { name: '正在刷新…' }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => { done!(); });
-  expect(screen.getByText('刚刷新过')).toBeTruthy(); expect((screen.getByRole('button', { name: '刷新' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText('刚刷新过').parentElement).toBe(screen.getByRole('button', { name: '刷新' }).parentElement);
+  expect(screen.getByText('刚尝试刷新')).toBeTruthy(); expect((screen.getByRole('button', { name: '刷新' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText('刚尝试刷新').parentElement).toBe(screen.getByRole('button', { name: '刷新' }).parentElement);
   fireEvent.click(screen.getByRole('button', { name: '刷新' })); expect(refreshQuota).toHaveBeenCalledTimes(1);
 });
 test('刷新：数据刚查过（一分钟内）按钮不可点并写“刚刷新过”；出错只显示原因', async () => {
   show(quotaView(new Date(Date.now() - 10_000))); await toStats();
-  expect(screen.getByText('刚刷新过')).toBeTruthy(); expect((screen.getByRole('button', { name: '刷新' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText('刚尝试刷新')).toBeTruthy(); expect((screen.getByRole('button', { name: '刷新' }) as HTMLButtonElement).disabled).toBe(true);
   cleanup();
   const refreshQuota = vi.fn(async () => { throw new Error("Error invoking remote method 'xa:quota-refresh': Error: 正在刷新额度，请稍等。"); });
   show(quotaView(OLD), { refreshQuota }); await toStats();

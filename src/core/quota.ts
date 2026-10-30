@@ -341,9 +341,17 @@ export function quotaDelta(job: { who: Who } & QuotaSnapshots): string | null {
   const diff = quotaPoints(before, after);
   return diff === null ? null : `${after!.label} +${diff.toFixed(1)}%`;
 }
+// 公开视图只返回固定原因摘要，不把子进程错误原文或凭据带到界面。
+function quotaFailureReason(error: string): string {
+  if (/未读到完整查询结果/.test(error)) return '未读到完整查询结果，请稍后重试。';
+  if (/超时|timed?\s*out/i.test(error)) return '查询超时，请稍后重试。';
+  if (/登录|钥匙串|认证/.test(error)) return '登录状态未能确认，请检查登录后重试。';
+  if (/账户来源/.test(error)) return '本次未能确认账户来源，请检查账户设置。';
+  return '本次未能获取额度，请稍后重试；若持续失败，请检查连接和登录状态。';
+}
 export function boardQuota(snapshot: QuotaSnapshot | null) {
   return (snapshot?.providers ?? (['codex', 'grok', 'cursor', 'kimi'] as const).map(icon => unavailable(icon, '尚未查询')))
-    .map(({ name, icon, plan, bars, at, error, extraUsage }) => ({ name, icon, plan, at, ...(snapshot && error ? { failed: true as const } : {}),
+    .map(({ name, icon, plan, bars, at, error, extraUsage }) => ({ name, icon, plan, at, ...(snapshot && error ? { failed: true as const, failureReason: quotaFailureReason(error) } : {}),
       ...(extraUsage ? { extraUsage } : {}),
       bars: bars.map(({ label, used, approx, reset }) => ({ label, used, ...(approx ? { approx } : {}), reset })) }));
 }

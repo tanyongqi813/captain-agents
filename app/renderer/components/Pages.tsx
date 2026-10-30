@@ -5,7 +5,7 @@ import type { Profile } from '../../../src/core/profiles.ts';
 import type { Entry } from '../lib/board.ts';
 import { averageTimingLine, awaitingReply, decisionText, fmtDur, fmtTime, QUOTA_STALE_SECONDS, realState } from '../lib/board.ts';
 import { dayGroups, dimmed, entryProject, outcomeOf, projectLabel, projectRows, recentLabel } from '../lib/history.ts';
-import { dataTime, extraUsageLine, extraUsageWarning, quotaLevel } from '../lib/quota.ts';
+import { dataTime, extraUsageLine, extraUsageWarning, quotaFailure, quotaLevel } from '../lib/quota.ts';
 import { errorReason } from '../lib/errors.ts';
 import { subscribeTick } from '../lib/ticker.ts';
 import { Button, CheckChip, Chip, EmptyState, ReplyDot, SideNavLayout, WorkerIcon, WorkerIdentity, WorkerRow } from '../ui/index.ts';
@@ -116,11 +116,11 @@ function QuotaCards({ view }: { view: View }) {
   };
   // 只有可信的额度才有卡片（没列出来的厂家、连的不是官方接口的 Codex 没有）；一家都没有时整节不出现。
   if (!view.quota.length) return null;
-  return <><div className="sec-head"><h3 className="sec">可查询额度</h3><span className="sec-tools">{cooling && !busy && <span className="faint">刚刷新过</span>}<Button size="sm" disabled={busy || cooling} onClick={refresh}>{busy ? '正在刷新…' : '刷新'}</Button></span></div>{error && <p role="alert" className="muted">没能刷新：{error}</p>}<div className="quota-cards">{view.quota.map(q => {
+  return <><div className="sec-head"><h3 className="sec">可查询额度</h3><span className="sec-tools">{cooling && !busy && <span className="faint">刚尝试刷新</span>}<Button size="sm" disabled={busy || cooling} onClick={refresh}>{busy ? '正在刷新…' : '刷新'}</Button></span></div>{error && <p role="alert" className="muted">没能刷新：{error}</p>}<div className="quota-cards">{view.quota.map(q => {
       const old = q.at != null && (now - Date.parse(q.at)) / 1000 > QUOTA_STALE_SECONDS;
       return <div className="panel qcard" key={q.name}><div className="crow"><WorkerIcon name={q.icon} /><span className="who">{q.name}</span><span className="faint when">{q.plan}</span></div>{q.bars.map((b, i) => <div key={i}><div className="bar-top"><span>{b.label}</span>{b.used == null ? <span className="faint">查不到</span> : <b>已用 {b.approx ? '不到 ' : ''}{b.used}%</b>}</div><div className="qtrack"><i className={quotaLevel(b.used, view.settings.limits?.quotaStop)} style={{
             width: `${Math.min(100, b.used || 0)}%`
-          }} /></div>{b.reset && <div className="faint card-note">{fmtTime(b.reset, true)} 重置</div>}</div>)}{q.extraUsage && <div className="faint card-note">{extraUsageLine(q.extraUsage)}</div>}{q.extraUsage?.enabled && <div className="muted card-note">{extraUsageWarning}</div>}<div className="crow card-note">{old ? <Chip tone="warn">{dataTime(q)}</Chip> : <span className="faint">{dataTime(q)}</span>}{q.failed && <Chip tone="bad" title="显示的是上一次查到的数据">这次没查到</Chip>}</div></div>;
+          }} /></div>{b.reset && <div className="faint card-note">{fmtTime(b.reset, true)} 重置</div>}</div>)}{q.extraUsage && <div className="faint card-note">{extraUsageLine(q.extraUsage)}</div>}{q.extraUsage?.enabled && <div className="muted card-note">{extraUsageWarning}</div>}<div className="crow card-note">{old ? <Chip tone="warn">{dataTime(q)}</Chip> : <span className="faint">{dataTime(q)}</span>}</div>{q.failed && <div className="card-note"><Chip tone="bad">{quotaFailure(q)}</Chip><details className="card-note"><summary>查看失败原因</summary><p className="muted">{q.failureReason || '未记录具体原因，请稍后重试。'}</p></details></div>}</div>;
     })}</div></>;
 }
 type Who = keyof Workers;

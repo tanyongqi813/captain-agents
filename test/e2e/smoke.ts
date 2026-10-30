@@ -500,7 +500,7 @@ test('真实应用：主人决定和留言落盘、菜单栏、通知、安全�
       assert.deepEqual(await page.locator('[data-who]').evaluateAll(rows => rows.map(r => r.getAttribute('data-who'))), ['codex', 'codex-luna', 'grok', 'cursor-grok', 'cursor-opus', 'cursor-sonnet', 'kimi', 'deepseek', 'deepseek-flash']);
       assert.equal(await page.getByRole('switch', { name: '启用' }).count(), 9);
       // DeepSeek 组在最下面：只开高档，没有快速版，组头不写用量（按用量扣它自己的余额）。
-      await page.getByRole('group', { name: 'DeepSeek · Flash · DeepSeek V4.1 Flash' }).scrollIntoViewIfNeeded();
+      await page.locator('[data-who="deepseek-flash"]').scrollIntoViewIfNeeded();
       await shot(variant.name, 'settings-workers-deepseek');
       // 一个总开关：缺省关，打开保存并截图，再关掉。
       await pane('联网', 'network', () => page.getByRole('switch', { name: '允许选手联网' }).waitFor())();

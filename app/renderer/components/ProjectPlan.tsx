@@ -114,6 +114,11 @@ function TaskRow({ plan, project, task, onDispatch, onAutopilot }: { plan: TaskP
     const passed = target ? dep.accepted.includes(target.status) : false;
     return `${dep.id} ${passed ? '已通过' : target ? `未通过（${target.status}）` : '不在台账'}`;
   }).join(' · ') : '无前置';
+  const unavailable = task.problems[0] ?? (task.status === 'DRAFT'
+    ? '等待负责人推进为 READY 并生成执行胶囊'
+    : task.status === 'CHANGES_REQUESTED'
+      ? '等待负责人生成下一轮修复胶囊'
+      : '不可派发');
   // 打开 Task Spec：只把项目名和规划里的仓库内相对路径交给桥，路径与文件由主进程按登记处解析（第 19 节）。
   const openSpec = async () => {
     if (!task.spec || opening) return;
@@ -127,8 +132,9 @@ function TaskRow({ plan, project, task, onDispatch, onAutopilot }: { plan: TaskP
       <span className="num plan-id">{task.id}</span>
       <span className="crow htitle"><span className="ellip">{task.title}</span></span>
       <span className="right">
+        {task.priority && <Chip tone={task.priority === 'P0' ? 'warn' : 'neutral'}>优先级 {task.priority}</Chip>}
         <Chip tone={task.known ? 'neutral' : 'bad'}>{task.status}</Chip>
-        {task.ready ? <Chip tone="ok">可执行</Chip> : <span className="faint">{task.problems[0] ?? '不可派发'}</span>}
+        {task.ready ? <Chip tone="ok">可执行</Chip> : <span className="faint">{unavailable}</span>}
       </span>
     </button>
     <div className="plan-meta faint">前置：{deps}</div>
@@ -137,6 +143,7 @@ function TaskRow({ plan, project, task, onDispatch, onAutopilot }: { plan: TaskP
       {task.goal && <p>{task.goal}</p>}
       {!!task.acceptance.length && <div className="plan-accept">{task.acceptance.map((item, i) => <p key={i}>{i + 1}. {item}</p>)}</div>}
       {!task.ready && !!task.problems.length && <p className="notice notice-bad">{task.problems.join('；')}</p>}
+      {!task.ready && !task.problems.length && <p className="notice notice-warn">{unavailable}。</p>}
       <div className="plan-actions">
         {task.spec && <Button size="sm" disabled={opening} onClick={() => void openSpec()}>{opening ? '正在打开…' : '打开 Task Spec'}</Button>}
         {task.ready && <Button size="sm" variant="primary" onClick={() => onDispatch(task)}>派发</Button>}
@@ -148,7 +155,7 @@ function TaskRow({ plan, project, task, onDispatch, onAutopilot }: { plan: TaskP
   </div>;
 }
 
-export function ProjectPlan({ view, notify, focusRun, openJob }: { view: View; notify(text: string): void; focusRun?: string; openJob?(id: string): void }) {
+export function ProjectPlan({ view, notify, focusRun, consumeFocus, openJob }: { view: View; notify(text: string): void; focusRun?: string; consumeFocus?(): void; openJob?(id: string): void }) {
   const [scope, setScope] = useState(readScope);
   const [dispatching, setDispatching] = useState<PlanTask | null>(null);
   const [autopilotTask, setAutopilotTask] = useState<PlanTask | null>(null), [selectedRun, setSelectedRun] = useState<string | null>(focusRun ?? null);
@@ -157,8 +164,12 @@ export function ProjectPlan({ view, notify, focusRun, openJob }: { view: View; n
     setSelectedRun(focusRun);
     const run = view.autopilots?.find(r => r.id === focusRun);
     if (run) setScope(run.project);
+    // 从看板跳转过来的编号只用一次。弹窗自己保留 selectedRun，顶层不再残留它，
+    // 否则关闭后离开、再进入规划页会把旧执行重新打开。
+    consumeFocus?.();
   }, [focusRun]);
   const run = view.autopilots?.find(r => r.id === selectedRun);
+  const closeRun = () => { setSelectedRun(null); consumeFocus?.(); };
   // 只列真的有任务台账（plan.present 为真，也就是仓库里确实有 docs/TASK_LIST.md）的已登记项目。
   const projects = view.projects.filter(project => view.plans[project.name]?.present === true);
   const current = projects.find(project => project.name === scope) ?? projects[0];
@@ -169,7 +180,7 @@ export function ProjectPlan({ view, notify, focusRun, openJob }: { view: View; n
     return { id: 'p:' + project.name, label: project.label, badge: ready,
       note: total ? (ready ? `${ready} 项可执行` : '没有可执行的') : '台账是空的' };
   });
-  const detail = run && <AutopilotDetail run={run} close={() => setSelectedRun(null)} notify={notify} openJob={openJob} />;
+  const detail = run && <AutopilotDetail run={run} close={closeRun} notify={notify} openJob={openJob} />;
   if (!projects.length) return <div className="page"><EmptyState>还没有带任务规划的项目</EmptyState>
     <p className="sub plan-empty-note">登记的项目里出现 docs/TASK_LIST.md 后会显示在这里。</p>
     <AutopilotList runs={view.autopilots ?? []} open={setSelectedRun} />{detail}</div>;

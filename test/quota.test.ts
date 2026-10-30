@@ -352,6 +352,14 @@ test('某一家这次查不到：保留那家上一次的数据和时间，写�
   assert.match(formatQuota(fresh), /Codex：查不到/);
   assert.equal(boardQuota(null).every(p => p.failed === undefined && p.at === null), true);
 });
+test('公开额度失败原因是固定摘要，不返回子进程错误原文', () => {
+  const make = (error: string) => boardQuota({ queriedAt: '2026-10-22T08:20:00Z', providers: [{ name: 'Cursor', icon: 'cursor', plan: null, at: null, bars: [], error }] })[0];
+  assert.equal(make('未读到完整查询结果').failureReason, '未读到完整查询结果，请稍后重试。');
+  const unknown = make('Authorization: Bearer fake-private-token');
+  assert.equal(unknown.failed, true);
+  assert.ok(!JSON.stringify(unknown).includes('fake-private-token'));
+  assert.equal(make('查询超时').failureReason, '查询超时，请稍后重试。');
+});
 test('额度数据时间：CLI 用本地时间 MM-DD HH:mm', async () => {
   assert.match(formatQuota(await snapshot()), new RegExp(`数据时间 ${localTime(at)}`));
   assert.match(localTime(at), /^\d\d-\d\d \d\d:\d\d$/);

@@ -12,6 +12,8 @@ export const topBar = (q: Quota) => q.bars.reduce<QuotaBar | undefined>((a, b) =
 export const headerQuotaBar = (q: Quota) => q.icon === 'cursor' ? q.bars.find(b => b.label === '总额度') : topBar(q);
 const barText = (b: QuotaBar) => b.used == null ? '查不到' : (b.approx ? '不到 ' : '') + b.used + '%';
 export const dataTime = (q: Quota) => q.at ? `数据时间 ${fmtTime(q.at, true)}` : '还没有查到过';
+export const quotaFailure = (q: Quota) => q.at && q.bars.some(b => b.used !== null)
+  ? `本次刷新失败，显示 ${fmtTime(q.at, true)} 的数据` : '本次刷新失败，暂无可用数据';
 // 加油包（Extra Usage）元数据：独立付费，只作文字展示——不画百分比、不进额度环、不影响派发检查。
 export const extraUsageLine = (e: NonNullable<Quota['extraUsage']>) => {
   const parts = [e.enabled === null ? '状态未知' : e.enabled ? '已开启' : '未开启'];
@@ -22,4 +24,4 @@ export const extraUsageLine = (e: NonNullable<Quota['extraUsage']>) => {
 };
 export const extraUsageWarning = '服务方已开启额外付费，套餐用尽后可能继续计费。工作台不会替你开启或购买。';
 // 悬停提示：每个池一行，加油包单独一行（不与套餐窗口混排），再写数据时间（提示是纯文字，提醒色只用在各家表现页的卡片上）。
-export const quotaTip = (q: Quota) => [...q.bars.map(b => `${b.label}：${barText(b)}`), ...(q.extraUsage ? [extraUsageLine(q.extraUsage), ...(q.extraUsage.enabled ? [extraUsageWarning] : [])] : []), ...(q.failed ? ['这次没查到，上面是上一次的数据'] : []), dataTime(q)].join('\n');
+export const quotaTip = (q: Quota) => [...q.bars.map(b => `${b.label}：${barText(b)}`), ...(q.extraUsage ? [extraUsageLine(q.extraUsage), ...(q.extraUsage.enabled ? [extraUsageWarning] : [])] : []), ...(q.failed ? [quotaFailure(q)] : []), dataTime(q)].join('\n');
